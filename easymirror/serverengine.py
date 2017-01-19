@@ -2,14 +2,14 @@
 
 from multiprocessing import Process, Queue
 
-from client import runClient 
+from easymirror.server import runServer
 
 
-
-class ClientEngine(object):
+class ServerEngine(object):
     """
     服务端引擎，用于启动多个服务类型的子进程
     """
+
     def __init__(self):
         """
 
@@ -17,8 +17,7 @@ class ClientEngine(object):
         # 子进程通信队列
         self.q = Queue()
 
-        self.p = Process(target=runClient)
-
+        self.p = Process(target=runServer, args=[self.q])
 
     def start(self):
         """
@@ -29,4 +28,4 @@ class ClientEngine(object):
 
 
 if __name__ == "__main__":
-    ClientEngine().start()
+    ServerEngine().start()

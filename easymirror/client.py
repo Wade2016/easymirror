@@ -1,12 +1,12 @@
 # encoding: utf-8
 
-import time
 import threading
+import time
 import traceback
 
 import zmq
 
-from rpc import RpcObject, RemoteException
+from easymirror.rpc import RpcObject, RemoteException
 
 
 ########################################################################
@@ -160,7 +160,7 @@ class Client(RpcObject):
 
 
 # ----------------------------------------------------------------------
-def runClient():
+def runClient(q=None):
     """客户端主程序入口"""
 
     # 创建客户端

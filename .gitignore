@@ -90,3 +90,8 @@ ENV/
 
 # IDE
 .idea/
+classes_mirror.png
+packages_mirror.png
+
+# iPython
+

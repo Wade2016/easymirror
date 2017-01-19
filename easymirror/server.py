@@ -1,12 +1,13 @@
 # encoding: utf-8
 
-import time
-from datetime import datetime
 import signal
 import threading
+import time
+from datetime import datetime
 
 import zmq
-from rpc import *
+
+from easymirror.rpc import *
 
 # 实现Ctrl-c中断recv
 signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -138,7 +139,7 @@ def printLog(content):
 
 
 # ----------------------------------------------------------------------
-def runServer():
+def runServer(q=None):
     """运行服务器"""
     repAddress = 'tcp://*:8889'
     pubAddress = 'tcp://*:8890'
