@@ -1,0 +1,8 @@
+{
+  "futures":{
+    "vaild": true
+    ,"logdir": "./log"
+    ,"repAddress": "tcp://*:23001"
+    ,"pubAddress": "tcp://*:23002"
+  }
+}

@@ -1,9 +1,10 @@
 # encoding: utf-8
 
+import sys
+from logbook import Logger, StreamHandler, FileHandler
 import signal
 import threading
-import time
-from datetime import datetime
+import os
 
 import zmq
 
@@ -12,13 +13,21 @@ from easymirror.rpc import *
 # 实现Ctrl-c中断recv
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 
-class Server(RpcObject):
+
+class BaseServer(RpcObject):
     """RPC服务器"""
+    name = None
 
     # ----------------------------------------------------------------------
-    def __init__(self, repAddress, pubAddress):
+    def __init__(self, logdir='.', vaild=True, repAddress="tcp://*:23001", pubAddress='tcp://*:23002'):
         """Constructor"""
-        super(Server, self).__init__()
+        # 设置日志
+        self.log = None
+        self.__initLog(logdir)
+        # 是否启用这个服务
+        self.vaild = vaild
+
+        super(BaseServer, self).__init__()
         self.useMsgpack()
 
         # 保存功能函数的字典，key是函数名，value是函数对象
@@ -26,29 +35,52 @@ class Server(RpcObject):
             self.foo.__name__: self.foo,
         }
 
+        # subprocess Queue
+        self.pq = None
+
+        self.repAddress = repAddress
+        self.pubAddress = pubAddress
+
         # zmq端口相关
         self.__context = zmq.Context()
 
         self.__socketREP = self.__context.socket(zmq.REP)  # 请求回应socket
-        self.__socketREP.bind(repAddress)
+        self.__socketREP.bind(self.repAddress)
 
         self.__socketPUB = self.__context.socket(zmq.PUB)  # 数据广播socket
-        self.__socketPUB.bind(pubAddress)
+        self.__socketPUB.bind(self.pubAddress)
 
         # 工作线程相关
         self.__active = False  # 服务器的工作状态
         self.__thread = threading.Thread(target=self.run)  # 服务器的工作线程
 
-    # ----------------------------------------------------------------------
+    def __initLog(self, logdir):
+        """
+        初始化日志配置
+        :return:
+        """
+
+        # 存库文件
+        infoLog = os.path.join(logdir, '{}_info.log'.format(self.name))
+        self.logFileHandler = FileHandler(infoLog, bubble=True, level='INFO')
+
+        if __debug__:
+            StreamHandler(sys.stdout, level='DEBUG').push_application()
+
+        self.log = Logger(self.name)
+        self.log.debug("初始化日志完成")
+
     def start(self):
         """启动服务器"""
+        if not self.vaild:
+            # 不启用这个服务
+            return
         # 将服务器设为启动
         self.__active = True
 
         # 启动工作线程
         if not self.__thread.isAlive():
             self.__thread.start()
-
 
     # ----------------------------------------------------------------------
     def stop(self):
@@ -66,6 +98,7 @@ class Server(RpcObject):
         while self.__active:
             # 使用poll来等待事件到达，等待1秒（1000毫秒）
             if not self.__socketREP.poll(1000):
+                self.log.info("nothing")
                 continue
             # 从请求响应socket收取请求数据
             reqb = self.__socketREP.recv()
@@ -75,7 +108,6 @@ class Server(RpcObject):
 
             # 获取函数名和参数
             name, args, kwargs = req
-
 
             # 获取引擎中对应的函数对象，并执行调用，如果有异常则捕捉后返回
             try:
@@ -131,42 +163,25 @@ class Server(RpcObject):
 
         return '{} {s}'.format(t, s=s)
 
+    @staticmethod
+    def process(queue=None, *args, **kwargs):
+        """
+        子进程中将要运行的函数
+        :param args:
+        :param kwargs:
+        :return:
+        """
+        # 创建实例
+        server = BaseServer(*args, **kwargs)
 
-# ----------------------------------------------------------------------
-def printLog(content):
-    """打印日志"""
-    print(datetime.now().strftime("%H:%M:%S"), '\t', content)
+        server.start()
+        if queue is not None:
+            queue.get()
+        else:
+            while True:
+                if input("输入exit退出:") != "exit":
+                    continue
 
-
-# ----------------------------------------------------------------------
-def runServer(q=None):
-    """运行服务器"""
-    repAddress = 'tcp://*:8889'
-    pubAddress = 'tcp://*:8890'
-
-    # 创建并启动服务器
-    server = Server(repAddress, pubAddress)
-    server.start()
-
-    printLog('-' * 50)
-    printLog(u'easymirror 服务器已启动')
-
-    # # 进入主循环
-    # while True:
-    #     printLog(u'请输入exit来关闭服务器')
-    #     if input() != 'exit':
-    #         continue
-    #
-    #     printLog(u'确认关闭服务器？yes|no')
-    #     if input() == 'yes':
-    #         break
-
-    while 1:
-        time.sleep(1)
-
-
-    server.stopServer()
-
-
-if __name__ == '__main__':
-    runServer()
+                if input("是否退出(yes/no):") == "yes":
+                    break
+        server.stopServer()

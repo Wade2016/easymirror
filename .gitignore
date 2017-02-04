@@ -93,5 +93,7 @@ ENV/
 classes_mirror.png
 packages_mirror.png
 
-# iPython
+# project
+log/
+tmp/
 
