@@ -13,8 +13,6 @@ from easymirror.serverlog import *
 # 实现Ctrl-c中断recv
 signal.signal(signal.SIGINT, signal.SIG_DFL)
 
-def logfile():
-
 
 class BaseServer(RpcObject):
     """RPC服务器"""
@@ -64,9 +62,8 @@ class BaseServer(RpcObject):
         - 使用服务名作为日志的来源名
         :return:
         """
-        global log
         logfile = os.path.join(logdir, '{}.log'.format(self.name))
-        log = ServerLog(logfile, logzmqhost)
+        initLog(logfile, logzmqhost)
 
         # 使用服务名作为日志的来源名
         self.log = Logger(self.name)
@@ -98,8 +95,8 @@ class BaseServer(RpcObject):
         if self.__thread.isAlive():
             self.__thread.join()
 
-    @log.stdout
-    @log.file
+    @stdout
+    @file
     def run(self):
         """服务器运行函数"""
         while self.__active:
@@ -164,16 +161,8 @@ class BaseServer(RpcObject):
         # 停止服务器线程
         self.stop()
 
-    def foo(self, t, s=None):
-        """
-
-        :return:
-        """
-
-        return '{} {s}'.format(t, s=s)
-
-    @staticmethod
-    def process(queue=None, *args, **kwargs):
+    @classmethod
+    def process(cls, queue=None, *args, **kwargs):
         """
         子进程中将要运行的函数
         :param args:
@@ -181,7 +170,7 @@ class BaseServer(RpcObject):
         :return:
         """
         # 创建实例
-        server = BaseServer(*args, **kwargs)
+        server = cls(*args, **kwargs)
 
         # 开始启动服务
         server.start()
