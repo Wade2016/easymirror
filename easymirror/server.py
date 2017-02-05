@@ -1,14 +1,14 @@
 # encoding: utf-8
 
-import sys
-from logbook import Logger, StreamHandler, FileHandler
-import signal
-import threading
 import os
+import threading
+import signal
 
+from logbook import Logger
 import zmq
 
 from easymirror.rpc import *
+from easymirror.serverlog import *
 
 # 实现Ctrl-c中断recv
 signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -19,11 +19,12 @@ class BaseServer(RpcObject):
     name = None
 
     # ----------------------------------------------------------------------
-    def __init__(self, logdir='.', vaild=True, repAddress="tcp://*:23001", pubAddress='tcp://*:23002'):
+    def __init__(self, logdir='.', vaild=True, repAddress="tcp://*:23001", pubAddress='tcp://*:23002', logzmqhost=None):
         """Constructor"""
         # 设置日志
         self.log = None
-        self.__initLog(logdir)
+        self.__initLog(logdir, logzmqhost)
+
         # 是否启用这个服务
         self.vaild = vaild
 
@@ -54,19 +55,17 @@ class BaseServer(RpcObject):
         self.__active = False  # 服务器的工作状态
         self.__thread = threading.Thread(target=self.run)  # 服务器的工作线程
 
-    def __initLog(self, logdir):
+    def __initLog(self, logdir, logzmqhost):
         """
         初始化日志配置
+        - 打印到屏幕仅在调试模式下可用
+        - 使用服务名作为日志的来源名
         :return:
         """
+        logfile = os.path.join(logdir, '{}.log'.format(self.name))
+        initLog(logfile, logzmqhost)
 
-        # 存库文件
-        infoLog = os.path.join(logdir, '{}_info.log'.format(self.name))
-        self.logFileHandler = FileHandler(infoLog, bubble=True, level='INFO')
-
-        if __debug__:
-            StreamHandler(sys.stdout, level='DEBUG').push_application()
-
+        # 使用服务名作为日志的来源名
         self.log = Logger(self.name)
         self.log.debug("初始化日志完成")
 
@@ -74,7 +73,11 @@ class BaseServer(RpcObject):
         """启动服务器"""
         if not self.vaild:
             # 不启用这个服务
+            self.log.notice("{name}服务不启用".format(name=self.name))
             return
+
+        self.log.notice("{name}服务启动".format(name=self.name))
+
         # 将服务器设为启动
         self.__active = True
 
@@ -92,19 +95,22 @@ class BaseServer(RpcObject):
         if self.__thread.isAlive():
             self.__thread.join()
 
-    # ----------------------------------------------------------------------
+    @stdout
+    @file
     def run(self):
         """服务器运行函数"""
         while self.__active:
+            self.log.debug("等待收包")
             # 使用poll来等待事件到达，等待1秒（1000毫秒）
             if not self.__socketREP.poll(1000):
-                self.log.info("nothing")
                 continue
             # 从请求响应socket收取请求数据
             reqb = self.__socketREP.recv()
 
             # 序列化解包
             req = self.unpack(reqb)
+            if __debug__:
+                self.log.debug("socket 信息: {}".format(req))
 
             # 获取函数名和参数
             name, args, kwargs = req
@@ -155,16 +161,8 @@ class BaseServer(RpcObject):
         # 停止服务器线程
         self.stop()
 
-    def foo(self, t, s=None):
-        """
-
-        :return:
-        """
-
-        return '{} {s}'.format(t, s=s)
-
-    @staticmethod
-    def process(queue=None, *args, **kwargs):
+    @classmethod
+    def process(cls, queue=None, *args, **kwargs):
         """
         子进程中将要运行的函数
         :param args:
@@ -172,8 +170,9 @@ class BaseServer(RpcObject):
         :return:
         """
         # 创建实例
-        server = BaseServer(*args, **kwargs)
+        server = cls(*args, **kwargs)
 
+        # 开始启动服务
         server.start()
         if queue is not None:
             queue.get()
