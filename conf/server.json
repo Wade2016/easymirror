@@ -1,8 +1,9 @@
 {
-  "futures":{
-    "vaild": true
-    ,"logdir": "./log"
-    ,"repAddress": "tcp://*:23001"
-    ,"pubAddress": "tcp://*:23002"
+  "futures": {
+    "vaild": true,
+    "logdir": "./log",
+    "logzmqhost": "127.0.0.1:24001",
+    "repAddress": "tcp://*:23001",
+    "pubAddress": "tcp://*:23002"
   }
 }
