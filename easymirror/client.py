@@ -10,12 +10,12 @@ from easymirror.rpc import RpcObject, RemoteException
 
 
 ########################################################################
-class Client(RpcObject):
+class BaseClient(RpcObject):
     """RPC客户端"""
 
     def __init__(self, reqAddress, subAddress):
         """Constructor"""
-        super(Client, self).__init__()
+        super(BaseClient, self).__init__()
 
         # 使用 JSON 解包
         self.useMsgpack()
@@ -96,8 +96,6 @@ class Client(RpcObject):
             except:
                 traceback.print_exc()
 
-
-
     # ----------------------------------------------------------------------
     def subRev(self):
         """客户端运行函数"""
@@ -152,27 +150,22 @@ class Client(RpcObject):
         """
         self.__socketSUB.setsockopt(zmq.SUBSCRIBE, topic)
 
-    # ----------------------------------------------------------------------
-    def callback(self, topic, data):
-        """回调函数"""
-        print("回调函数")
-        print(data)
+    @classmethod
+    def process(cls, queue=None, *args, **kwargs):
+        """客户端主程序入口"""
 
+        # 创建客户端
+        client = cls(*args, **kwargs)
 
-# ----------------------------------------------------------------------
-def runClient(q=None):
-    """客户端主程序入口"""
+        client.subscribeTopic(b'')
+        client.start()
+        if queue is not None:
+            queue.get()
 
-    # 创建客户端
-    reqAddress = 'tcp://localhost:8889'
-    subAddress = 'tcp://localhost:8890'
-    client = Client(reqAddress, subAddress)
-
-    client.subscribeTopic(b'')
-    client.start()
-    while 1:
-        time.sleep(1)
-
-
-if __name__ == '__main__':
-    runClient()
+        else:
+            while True:
+                if input("输入exit退出:") != "exit":
+                    continue
+                if input("是否退出(yes/no):") == "yes":
+                    break
+        client.stopServer()

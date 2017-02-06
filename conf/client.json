@@ -1,0 +1,9 @@
+{
+  "futures": {
+    "vaild": true,
+    "logdir": "./log",
+    "logzmqhost": "localhost:24051",
+    "reqAddress": "tcp://localhost:23001",
+    "subAddress": "tcp://localhost:23002"
+  }
+}

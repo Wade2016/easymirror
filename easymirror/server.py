@@ -184,3 +184,11 @@ class BaseServer(RpcObject):
                 if input("是否退出(yes/no):") == "yes":
                     break
         server.stopServer()
+
+    def foo(self):
+        """
+
+        :return:
+        """
+        self.log.debug("测试 test")
+        return '测试返回'

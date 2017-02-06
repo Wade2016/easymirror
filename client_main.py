@@ -1,6 +1,6 @@
 import os
 
-from easymirror import *
+from easymirror import ClientEngine
 from argparse import ArgumentParser
 
 path = os.path.abspath(os.path.dirname(__file__))
@@ -17,4 +17,4 @@ opt.add_argument("--conf", default="./conf", help="项目的配置文件路径")
 cmdArgs = opt.parse_args()
 
 if __name__ == "__main__":
-    ServerEngine(cmdArgs.conf).start()
+    ClientEngine(cmdArgs.conf).start()
