@@ -16,7 +16,9 @@ signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 class BaseServer(RpcObject):
     """RPC服务器"""
-    name = None
+    @property
+    def name(self):
+        return self.__class__.__name__
 
     # ----------------------------------------------------------------------
     def __init__(self, logdir='.', vaild=True, repAddress="tcp://*:23001", pubAddress='tcp://*:23002', logzmqhost=None):

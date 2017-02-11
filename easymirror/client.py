@@ -1,21 +1,35 @@
 # encoding: utf-8
 
+import os
 import threading
-import time
 import traceback
 
+from logbook import Logger
 import zmq
 
 from easymirror.rpc import RpcObject, RemoteException
+import easymirror.serverlog as log
 
 
 ########################################################################
 class BaseClient(RpcObject):
     """RPC客户端"""
 
-    def __init__(self, reqAddress, subAddress):
+    @property
+    def name(self):
+        return self.__class__.__name__
+
+    def __init__(self, reqAddress, subAddress, vaild=True, logdir="../log", logzmqhost=None):
         """Constructor"""
+
+        self.__initLog(logdir, logzmqhost)
+
         super(BaseClient, self).__init__()
+
+        assert isinstance(vaild, bool)
+        self.vaild = vaild
+
+        self.logdir = logdir
 
         # 使用 JSON 解包
         self.useMsgpack()
@@ -33,7 +47,20 @@ class BaseClient(RpcObject):
         self.__thread = threading.Thread(target=self.run)  # 客户端的工作线程
 
     # ----------------------------------------------------------------------
+    def __initLog(self, logdir, logzmqhost):
+        """
+        在子进程中初始化客户端的句柄
 
+        :param logdir:
+        :param logzmqhost:
+        :return:
+        """
+
+        logfile = os.path.join(logdir, '{}.log'.format(self.name))
+        log.initLog(logfile, logzmqhost)
+
+        # 使用服务名作为日志的来源名
+        self.log = Logger(self.name)
 
     # ----------------------------------------------------------------------
     def __getattr__(self, name):
@@ -86,8 +113,13 @@ class BaseClient(RpcObject):
         if self.__thread.isAlive():
             self.__thread.join()
 
+    @log.stdout
+    @log.file
     def run(self):
         while self.__active:
+            import time
+            time.sleep(1)
+            self.log.warn("接受广播")
             # 接受广播
             self.subRev()
             # 发送数据
@@ -161,7 +193,6 @@ class BaseClient(RpcObject):
         client.start()
         if queue is not None:
             queue.get()
-
         else:
             while True:
                 if input("输入exit退出:") != "exit":

@@ -3,7 +3,6 @@ from .client import BaseClient
 
 class FuturesClient(BaseClient):
     """期货行情客户端"""
-    name = "期货行情"
 
     # ----------------------------------------------------------------------
     def callback(self, topic, data):
