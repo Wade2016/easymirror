@@ -8,7 +8,7 @@ from logbook import Logger
 import zmq
 
 from easymirror.rpc import *
-from easymirror.serverlog import *
+from easymirror.log import *
 
 # 实现Ctrl-c中断recv
 signal.signal(signal.SIGINT, signal.SIG_DFL)

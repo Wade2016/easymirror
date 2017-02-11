@@ -8,7 +8,7 @@ from logbook import Logger
 import zmq
 
 from easymirror.rpc import RpcObject, RemoteException
-import easymirror.serverlog as log
+import easymirror.log as log
 
 
 ########################################################################
