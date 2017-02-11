@@ -1,21 +1,35 @@
 # encoding: utf-8
 
+import os
 import threading
-import time
 import traceback
 
+from logbook import Logger
 import zmq
 
 from easymirror.rpc import RpcObject, RemoteException
+import easymirror.log as log
 
 
 ########################################################################
-class Client(RpcObject):
+class BaseClient(RpcObject):
     """RPC客户端"""
 
-    def __init__(self, reqAddress, subAddress):
+    @property
+    def name(self):
+        return self.__class__.__name__
+
+    def __init__(self, reqAddress, subAddress, vaild=True, logdir="../log", logzmqhost=None):
         """Constructor"""
-        super(Client, self).__init__()
+
+        self.__initLog(logdir, logzmqhost)
+
+        super(BaseClient, self).__init__()
+
+        assert isinstance(vaild, bool)
+        self.vaild = vaild
+
+        self.logdir = logdir
 
         # 使用 JSON 解包
         self.useMsgpack()
@@ -33,7 +47,20 @@ class Client(RpcObject):
         self.__thread = threading.Thread(target=self.run)  # 客户端的工作线程
 
     # ----------------------------------------------------------------------
+    def __initLog(self, logdir, logzmqhost):
+        """
+        在子进程中初始化客户端的句柄
 
+        :param logdir:
+        :param logzmqhost:
+        :return:
+        """
+
+        logfile = os.path.join(logdir, '{}.log'.format(self.name))
+        log.initLog(logfile, logzmqhost)
+
+        # 使用服务名作为日志的来源名
+        self.log = Logger(self.name)
 
     # ----------------------------------------------------------------------
     def __getattr__(self, name):
@@ -86,8 +113,13 @@ class Client(RpcObject):
         if self.__thread.isAlive():
             self.__thread.join()
 
+    @log.stdout
+    @log.file
     def run(self):
         while self.__active:
+            import time
+            time.sleep(1)
+            self.log.warn("接受广播")
             # 接受广播
             self.subRev()
             # 发送数据
@@ -95,8 +127,6 @@ class Client(RpcObject):
                 self.reqSend()
             except:
                 traceback.print_exc()
-
-
 
     # ----------------------------------------------------------------------
     def subRev(self):
@@ -152,27 +182,21 @@ class Client(RpcObject):
         """
         self.__socketSUB.setsockopt(zmq.SUBSCRIBE, topic)
 
-    # ----------------------------------------------------------------------
-    def callback(self, topic, data):
-        """回调函数"""
-        print("回调函数")
-        print(data)
+    @classmethod
+    def process(cls, queue=None, *args, **kwargs):
+        """客户端主程序入口"""
 
+        # 创建客户端
+        client = cls(*args, **kwargs)
 
-# ----------------------------------------------------------------------
-def runClient(q=None):
-    """客户端主程序入口"""
-
-    # 创建客户端
-    reqAddress = 'tcp://localhost:8889'
-    subAddress = 'tcp://localhost:8890'
-    client = Client(reqAddress, subAddress)
-
-    client.subscribeTopic(b'')
-    client.start()
-    while 1:
-        time.sleep(1)
-
-
-if __name__ == '__main__':
-    runClient()
+        client.subscribeTopic(b'')
+        client.start()
+        if queue is not None:
+            queue.get()
+        else:
+            while True:
+                if input("输入exit退出:") != "exit":
+                    continue
+                if input("是否退出(yes/no):") == "yes":
+                    break
+        client.stopServer()

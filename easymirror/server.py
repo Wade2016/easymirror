@@ -8,7 +8,7 @@ from logbook import Logger
 import zmq
 
 from easymirror.rpc import *
-from easymirror.serverlog import *
+from easymirror.log import *
 
 # 实现Ctrl-c中断recv
 signal.signal(signal.SIGINT, signal.SIG_DFL)
@@ -16,7 +16,9 @@ signal.signal(signal.SIGINT, signal.SIG_DFL)
 
 class BaseServer(RpcObject):
     """RPC服务器"""
-    name = None
+    @property
+    def name(self):
+        return self.__class__.__name__
 
     # ----------------------------------------------------------------------
     def __init__(self, logdir='.', vaild=True, repAddress="tcp://*:23001", pubAddress='tcp://*:23002', logzmqhost=None):
@@ -184,3 +186,11 @@ class BaseServer(RpcObject):
                 if input("是否退出(yes/no):") == "yes":
                     break
         server.stopServer()
+
+    def foo(self):
+        """
+
+        :return:
+        """
+        self.log.debug("测试 test")
+        return '测试返回'
