@@ -4,6 +4,7 @@
     "logdir": "./log",
     "logzmqhost": "127.0.0.1:24051",
     "reqAddress": "tcp://127.0.0.1:23001",
-    "subAddress": "tcp://127.0.0.1:23002"
+    "subAddress": "tcp://127.0.0.1:23002",
+    "insertAddress": "tcp://127.0.0.1:23003"
   }
 }

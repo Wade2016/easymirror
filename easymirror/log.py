@@ -38,7 +38,7 @@ def initLog(logfile, logzmqhost):
     global logFileHandler, streamHandler
     logFileHandler = FileHandler(logfile, bubble=True, level='NOTICE')
     # 子进程中的屏幕输出需要通过 ZMQ 来提交，ServerEngine 中订阅并显示
-    streamHandler = ZeroMQHandler("tcp://{}".format(logzmqhost), level="DEBUG")
+    streamHandler = ZeroMQHandler("tcp://{}".format(logzmqhost), level="DEBUG", bubble=True)
     if __debug__:
         streamHandler.applicationbound()
 
