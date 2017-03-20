@@ -3,12 +3,14 @@
 import os
 import threading
 import traceback
+from queue import Queue
 
 from logbook import Logger
 import zmq
 
 from easymirror.rpc import RpcObject, RemoteException
 import easymirror.log as log
+from .pipeline import SaveInflux
 
 
 ########################################################################
@@ -51,6 +53,13 @@ class BaseClient(RpcObject):
         self.__socketInsertREP = self.__context.socket(zmq.REP)  # 响应数据索引插入
         self.__activeInsert = False  # 客户端的工作状态
         self.__threadInsert = threading.Thread(target=self.insert)  # 客户端的工作线程
+        self.__indexQueue = Queue()
+
+        # 保存数据索引的管道
+        self.pipe = SaveInflux(
+            self.__indexQueue, worker=2, host="influxdb://root:root@localhost:8086/easymirror"
+        )
+
 
     # ----------------------------------------------------------------------
     def __initLog(self, logdir, logzmqhost):
@@ -233,6 +242,9 @@ class BaseClient(RpcObject):
             return
         # 数据提交的数据索引
         reqb = self.__socketInsertREP.recv_string()
+
+        # 在 SaveIndex.batch_insert_worker 中执行
+        self.__indexQueue.put(reqb)
 
         self.log.debug("收到时间索引 {}".format(reqb))
 

@@ -113,6 +113,9 @@ class BaseDataResource(object):
         :return:
         """
 
+        index = json.dumps(index)
+
         if __debug__: self.log.debug("时间序列插入%s" % index)
         self.queue.put_nowait(index)
+
         if __debug__: self.log.debug("插入完成")
