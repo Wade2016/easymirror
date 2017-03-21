@@ -19,7 +19,7 @@ class BaseClient(RpcObject):
     def name(self):
         return self.__class__.__name__
 
-    def __init__(self, reqAddress, subAddress, vaild=True, logdir="../log", logzmqhost=None, insertAddress=None):
+    def __init__(self, reqAddress, subAddress, vaild=True, logdir="../log", logzmqhost=None, tickerAddress=None):
         """Constructor"""
 
         self.__initLog(logdir, logzmqhost)
@@ -34,23 +34,24 @@ class BaseClient(RpcObject):
         # 使用 JSON 解包
         self.useMsgpack()
 
-        # zmq端口相关
+        # 循环为激活状态
+        self.__active = False  # 客户端的工作状态
+
+        # 与服务器端的交互线程
         self.__reqAddress = reqAddress
         self.__subAddress = subAddress
-        self.__insertAddress = insertAddress
-
         self.__context = zmq.Context()
         self.__socketREQ = self.__context.socket(zmq.REQ)  # 请求发出socket
         self.__socketSUB = self.__context.socket(zmq.SUB)  # 广播订阅socket
-
         # 工作线程相关，用于处理服务器推送的数据
-        self.__active = False  # 客户端的工作状态
         self.__thread = threading.Thread(target=self.run)  # 客户端的工作线程
 
-        # 数据源插入数据索引
-        self.__socketInsertREP = self.__context.socket(zmq.REP)  # 响应数据索引插入
-        self.__activeInsert = False  # 客户端的工作状态
-        self.__threadInsert = threading.Thread(target=self.insert)  # 客户端的工作线程
+        # Ticker 数据订阅
+        self.__tickerAddress = tickerAddress
+        self.__socketSUBTicker = self.__context.socket(zmq.SUB)  # 响应数据索引插入
+        self.__threadSUBTicker = threading.Thread(
+            name="{}TickSUB".format(self.name),
+            target=self.subscribeTicker)  # 客户端的工作线程
 
     # ----------------------------------------------------------------------
     def __initLog(self, logdir, logzmqhost):
@@ -102,8 +103,9 @@ class BaseClient(RpcObject):
         self.__socketREQ.connect(self.__reqAddress)
         self.__socketSUB.connect(self.__subAddress)
 
-        # 插入数据
-        self.__socketInsertREP.bind(self.__insertAddress)
+        # 订阅 Ticker 数据
+        self.__socketSUBTicker.connect(self.__tickerAddress)
+        self.__socketSUBTicker.setsockopt(zmq.SUBSCRIBE, b'')
 
         # 将服务器设为启动
         self.__active = True
@@ -113,8 +115,8 @@ class BaseClient(RpcObject):
             self.__thread.start()
 
         self.__activeInsert = True
-        if not self.__threadInsert.isAlive():
-            self.__threadInsert.start()
+        if not self.__threadSUBTicker.isAlive():
+            self.__threadSUBTicker.start()
 
     # ----------------------------------------------------------------------
     def stop(self):
@@ -127,7 +129,7 @@ class BaseClient(RpcObject):
             self.__thread.join()
 
         if self.__threadInsert.isAlive():
-            self.__threadInsert.join()
+            self.__threadSUBTicker.join()
 
     @log.stdout
     @log.file
@@ -218,22 +220,24 @@ class BaseClient(RpcObject):
                     break
         client.stopServer()
 
-    def insert(self):
+    @log.stdout
+    def subscribeTicker(self):
         """
         插入数据
         :return:
         """
-        while self.__activeInsert:
-            self._insert()
+        self.log.warn("开始订阅数据")
+        while self.__active:
+            self._subscribeTicker()
 
     @log.stdout
     @log.file
-    def _insert(self):
-        if not self.__socketInsertREP.poll(1000):
+    def _subscribeTicker(self):
+        if not self.__socketSUBTicker.poll(1000):
+            # 等待广播
             return
-        # 数据提交的数据索引
-        reqb = self.__socketInsertREP.recv_string()
 
-        self.log.debug("收到时间索引 {}".format(reqb))
+        # 接受广播
+        ticker = self.__socketSUBTicker.recv_json()
 
-        self.__socketInsertREP.send_string("OK")
+        self.log.debug("收到订阅的ticker: {}".format(str(ticker)))

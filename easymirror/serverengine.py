@@ -5,7 +5,7 @@ from multiprocessing import Process, Queue
 from logbook.queues import ZeroMQSubscriber
 from logbook import StreamHandler
 
-from .futuresserver import FuturesServer
+from .easyctp import EasyctpServer
 
 
 class ServerEngine(object):
@@ -34,15 +34,15 @@ class ServerEngine(object):
             subscriber.dispatch_in_background(self.streamHandler)
 
         # 期货行情
-        conf = self.conf["futures"]
-        self.futuresProcess = Process(target=FuturesServer.process, args=[self.q], kwargs=conf)
+        conf = self.conf["easyctp"]
+        self.easyctpProcess = Process(target=EasyctpServer.process, args=[self.q], kwargs=conf)
 
     def start(self):
         """
         启动所有服务
         :return:
         """
-        self.futuresProcess.start()
+        self.easyctpProcess.start()
 
 
 if __name__ == "__main__":
