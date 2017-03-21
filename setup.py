@@ -1,14 +1,16 @@
 from setuptools import setup, find_packages
 import os
-import easymirror
+
 
 def read(fname):
     with open(os.path.join(os.path.dirname(__file__), fname)) as f:
         return f.read()
 
 
+__version__ = "0.0.1"
+
 setup(name='easymirror',
-      version=easymirror.__version__,
+      version=__version__,
       keywords='Finance',
       description='Rsync fianace datasource.',
       long_description=read("README.md"),
