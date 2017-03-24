@@ -10,6 +10,8 @@ from threading import Thread
 
 import zmq
 
+from .dealutils import getConfPath
+
 
 class BaseApi(object):
     """
@@ -18,7 +20,7 @@ class BaseApi(object):
 
     name = None
 
-    def __init__(self, confPath):
+    def __init__(self, confPath=None):
         """
 
         """
@@ -41,6 +43,10 @@ class BaseApi(object):
             self.log.setLevel(logging.DEBUG)
 
         # confPath 应该为一个文件夹路径而非文件
+        if confPath is None:
+            confPath = getConfPath()
+            self.log.warning("confPath 未指定，使用默认配置文件路径 {}".format(confPath))
+
         if not os.path.isdir(confPath):
             raise ValueError("confPath:{} should be a path but not file.".format(confPath))
 
@@ -60,10 +66,12 @@ class BaseApi(object):
         self.__tickerPUBActive = False
 
         # ticker 数据广播的逻辑
-        self.__tickerAddress = conf["tickerAddress"]
+        self.__tickerAddress = conf["tickerAddress"].replace("127.0.0.1", "*")
+        print(self.__tickerAddress)
         self.__context = zmq.Context()
         self.__socketPUBTicker = self.__context.socket(zmq.PUB)  # 数据广播socket
         self.__socketPUBTicker.bind(self.__tickerAddress)
+        self.log.info("ticker 广播地址{}".format(self.__tickerAddress))
 
         # 并发的时间序列插入线程
         self.__thread = Thread(name="{}TickerPUB".format(self.name, ), target=self.run)

@@ -226,7 +226,7 @@ class BaseClient(RpcObject):
         插入数据
         :return:
         """
-        self.log.warn("开始订阅数据")
+        self.log.warning("开始订阅数据")
         while self.__active:
             self._subscribeTicker()
 
