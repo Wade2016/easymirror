@@ -1,0 +1,12 @@
+{
+  "redis": {
+    "host": "localhost",
+    "port": 23002,
+    "password": "LoliIsJustice"
+  },
+  "easyctp":{
+    "log": "./log/easyctp.log"
+    ,"channel": "easymirror"
+    ,"localhostname": null
+  }
+}
