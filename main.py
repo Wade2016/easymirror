@@ -9,5 +9,4 @@ process.start()
 
 while 1:
     easymirror.pushTickerIndex({'time': time.time()})
-    time.sleep(1)
-
+    time.sleep(0.5)

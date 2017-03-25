@@ -1,18 +1,24 @@
 import importlib
 from multiprocessing import Process, Queue
 import json
+import os
+from .dealutils import getConfPath
+# from threading import Thread as Process
+# from queue import Queue
 
 # 子进程通信队列
 queue = Queue()
 
 
-def getMirror(_service, conf):
+def getMirror(_service, conf=None):
     '''
     获得对应的服务配套的接口
 
     :param serivce:
     :return:
     '''
+    conf = conf or os.path.join(getConfPath(), 'conf.json')
+
     return Process(target=_startMirror, args=[_service, conf, queue])
 
 

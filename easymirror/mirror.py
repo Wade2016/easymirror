@@ -60,8 +60,8 @@ class Mirror(object):
         self.log.addHandler(sh)
 
         if __debug__:
-            self.log.setLevel("INFO")
-            sh.setLevel("INFO")
+            self.log.setLevel("DEBUG")
+            sh.setLevel("DEBUG")
             self.log.debug("初始化日志完成")
 
     def start(self):
