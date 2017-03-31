@@ -1,5 +1,4 @@
 zmq
 logbook
-msgpack
 redis
 arrow

@@ -1,11 +1,12 @@
+# encoding: UTF-8
 import json
 import time
 import datetime
 import arrow
 
-from .client import BaseClient
-from .baseapi import BaseApi
-from .server import BaseServer
+# from .client import BaseClient
+# from .baseapi import BaseApi
+# from .server import BaseServer
 from .mirror import Mirror
 import pymongo
 
@@ -22,7 +23,10 @@ class Easymirror(Mirror):
         """
         super(Easymirror, self).__init__(conf, queue)
         # 初始化本地数据库链接
-        self.mongodb = pymongo.MongoClient()
+        self.mongodb = pymongo.MongoClient(
+            host=self.conf['host'],
+            port=self.conf['port']
+        )
         self.dbn = self.conf["TickerDB"]
 
     @property
@@ -85,7 +89,7 @@ class Easymirror(Mirror):
 
     def getTickerByAsk(self, ask):
         """
-
+        从本地查询需要对齐的ticker数据给对方
         :param ask:
         :return:
         """
@@ -96,8 +100,12 @@ class Easymirror(Mirror):
         }
         # ticker 格式为 [{}]
         ticker = self.mongodb[self.dbn][symbol].find_one(cmd)
-        ticker.pop('_id')
-        print(1616, ticker)
+
+        if ticker:
+            ticker.pop('_id')
+
+        print(1212, ticker['datetime'])
+
         return ticker
 
     def getAskMsg(self, index):
@@ -118,5 +126,27 @@ class Easymirror(Mirror):
         query = {
             self.timename: ticker[self.timename],
         }
+
+        print(1313, ticker[self.timename], ticker[self.itemname])
+
         # 如果不存在，保存ticker数据
-        self.mongodb[self.dbn][ticker[self.itemname]].update_one(ticker, query, upsert=True)
+        # TODO 测试中，暂时不保存
+        # self.mongodb[self.dbn][ticker[self.itemname]].update_one(ticker, query, upsert=True)
+
+    def loadToday(self):
+        """
+        加载今天交易日的ticker数据并生成缓存
+        :return:
+        """
+
+        # TODO 获取所有表，调试中，暂时只读取rb1710
+        tickers = []
+        for t in self.mongodb[self.dbn]['rb1710'].find():
+            tickers.append(t)
+            # 生成缓存
+            self.tCache.put(
+                t[self.timename],
+                t[self.itemname],
+            )
+
+        return tickers

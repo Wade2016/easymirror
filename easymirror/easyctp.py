@@ -1,3 +1,4 @@
+# encoding: UTF-8
 import json
 from .client import BaseClient
 from .baseapi import BaseApi

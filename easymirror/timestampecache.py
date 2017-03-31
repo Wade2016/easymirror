@@ -1,4 +1,4 @@
-import os
+# encoding: UTF-8
 
 
 class TimestampeCache(object):

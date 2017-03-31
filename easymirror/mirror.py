@@ -1,3 +1,4 @@
+# encoding: UTF-8
 import json
 import logging
 import socket
@@ -33,6 +34,10 @@ class Mirror(object):
 
         # 本地主机名，同时也是在Server-Redis上的标志，不能存在相同的主机名，尤其在使用Docker部署时注意重名
         self.localhostname = self.conf['localhostname'] or socket.gethostname()
+        if __debug__:
+            self.localhostname = str(time.time())[-3:]
+
+        self.log.info('localhostname {}'.format(self.localhostname))
 
         redisConf = conf["redis"]
 
@@ -50,19 +55,21 @@ class Mirror(object):
         # 循环逻辑
         self.__active = False
         self.service = [
-            threading.Thread(target=self.pubTickerIndex),
-            threading.Thread(target=self.subTickerIndex),
-            threading.Thread(target=self.handlerAsk),
-            threading.Thread(target=self.handlerReceive),
+            threading.Thread(target=self.pubTickerIndex, name=self.pubTickerIndex.__name__),
+            threading.Thread(target=self.subTickerIndex, name=self.subTickerIndex.__name__),
+            threading.Thread(target=self.handlerAsk, name=self.handlerAsk.__name__),
+            threading.Thread(target=self.handlerReceive, name=self.handlerReceive.__name__),
         ]
 
         # 忽略的主机名，一般在订阅行情中忽略自己发布的行情
-        self.filterHostnames = {self.name, }
+        self.filterHostnames = {self.localhostname, }
 
         # 索引的缓存，用来对比是否缺失数据
         self.tCache = TimestampeCache()
 
-    @property
+        self.counts = [0, 0, 0, 0, 0]
+
+
     def indexLike(self):
         """
         对齐索引的格式
@@ -115,8 +122,9 @@ class Mirror(object):
         self.log.addHandler(sh)
 
         if __debug__:
+            self.log.debug = print
             self.log.setLevel("DEBUG")
-            sh.setLevel("DEBUG")
+            # sh.setLevel("DEBUG")
             self.log.debug("初始化日志完成")
 
     def start(self):
@@ -127,9 +135,10 @@ class Mirror(object):
         self.__active = True
         for s in self.service:
             if not s.isAlive():
+                self.log.info('{} 服务开始'.format(s.name))
                 s.start()
 
-        self.run()
+                # self.run()
 
     def stop(self):
         """
@@ -139,9 +148,13 @@ class Mirror(object):
         self.__active = False
         self.log.info("服务结束")
 
+        self.log.info('广播:{} 收:{} 索取:{} 被索取:{} 接受:{}'.format(*self.counts))
+
         for s in self.service:
             if s.isAlive():
+                self.log.info('{} 服务结束中……'.format(s.name))
                 s.join()
+                self.log.info('{} 服务结束!'.format(s.name))
 
     @property
     def tickerchannel(self):
@@ -161,19 +174,18 @@ class Mirror(object):
 
         :return:
         """
-        if __debug__: self.log.debug("订阅中")
         msg = sub.get_message(ignore_subscribe_messages=True)
-        if __debug__: self.log.debug("收到时间戳 {}".format(msg))
 
         if not msg:
             return
+
+        if __debug__: self.log.debug("收到时间戳 {}".format(msg))
+
         channel = msg["channel"].decode('utf8')
         if self.tickerchannel != channel:
             # 不是ticker广播数据
             self.log.info("不是 ticker 广播数据 {} ".format(channel))
             return
-
-        print(1313, msg)
 
         # 格式化
         index = self.unpackage(msg["data"])
@@ -182,9 +194,10 @@ class Mirror(object):
         if index.get("hostname") in self.filterHostnames:
             return
 
+        self.counts[1] = self.counts[1] + 1
+
         # 检查数据是否缺失
         if self.tCache.isHave(index[self.timename], index[self.itemname]):
-            print(2323)
             return
 
         # 请求对齐数据
@@ -218,7 +231,8 @@ class Mirror(object):
         # 缓存数据
         self.tCache.put(timestamp[self.timename], timestamp[self.itemname])
 
-        print(1212, timestamp, self.tickerchannel)
+        self.counts[0] = self.counts[0] + 1
+
         timestamp = self.package(timestamp)
         self.redis.publish(self.tickerchannel, timestamp)
 
@@ -243,19 +257,20 @@ class Mirror(object):
         """
         raise NotImplemented()
 
-    def run(self):
-        """
-        主进程的操作
-        :return:
-        """
-        while self.__active:
-            pass
+    # def run(self):
+    #     """
+    #     主进程的操作
+    #     :return:
+    #     """
+    #     while self.__active:
+    #         pass
 
     def handlerAsk(self):
         """
         处理收到的请求对齐
         :return:
         """
+        self.log.info('listen ask : {}'.format(self.askchannel))
         while self.__active:
             self._handlerAsk()
 
@@ -263,14 +278,17 @@ class Mirror(object):
 
         # 阻塞，获取请求对齐
         # ask = self.askQueue.get()
-        msg = self.redis.blpop(self.askchannel)
+        msg = self.redis.blpop(self.askchannel, timeout=5)
+        if not msg:
+            return
+        self.counts[3] = self.counts[3] + 1
         ask = msg[1]
-        print(1515, ask)
         ask = self.unpackage(ask)
         # 查询本地的 Ticker 数据
         ticker = self.getTickerByAsk(ask)
         # 返回 Ticker 数据
-        self._donator(ask, ticker)
+        if ticker:
+            self._donator(ask, ticker)
 
     def ask(self, index):
         """
@@ -287,8 +305,8 @@ class Mirror(object):
         ask = self.package(ask)
         # 对方频道
         channel = self.ASK_CHANNEL_MODLE.format(self.name, index['hostname'])
+        self.counts[2] = self.counts[2] + 1
         self.redis.rpush(channel, ask)
-        print(1414, ask)
 
         # self.askQueue.put(ask)
 
@@ -338,7 +356,6 @@ class Mirror(object):
         hostname = ask['hostname']
         # 将 ticker 数据堆入补齐数据队列中
         channel = self.RECEIVE_CHANNEL_MODLE.format(self.name, hostname)
-        print(1717, channel)
         self.redis.rpush(channel, self.package(ticker))
 
     def handlerReceive(self):
@@ -352,9 +369,11 @@ class Mirror(object):
 
     def _handlerReceive(self):
 
-        msg = self.redis.blpop(self.receivechannel)
+        msg = self.redis.blpop(self.receivechannel, timeout=5)
+        if not msg:
+            return
+        self.counts[4] = self.counts[4] + 1
         ticker = msg[1]
-        print(1818, ticker)
         ask = self.unpackage(ticker)
         self.makeupTicker(ask)
 
@@ -362,6 +381,13 @@ class Mirror(object):
         """
         将补齐的ticker 数据保存到数据库中
         :param ticker:
+        :return:
+        """
+        raise NotImplemented()
+
+    def loadToday(self):
+        """
+        加载今天交易日的ticker数据并生成缓存
         :return:
         """
         raise NotImplemented()

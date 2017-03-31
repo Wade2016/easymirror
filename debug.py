@@ -3,7 +3,8 @@ import os
 from easymirror import api as emapi
 import datetime
 
-confDir = os.path.join(os.getcwd(), 'conf/conf.json')
+# confDir = os.path.join(os.getcwd(), 'conf/conf.json')
+confDir = None
 emapi.getMirror("vnpy", confDir).start()
 while True:
     emapi.pushTickerIndex({
