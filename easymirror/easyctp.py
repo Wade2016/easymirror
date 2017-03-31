@@ -1,7 +1,4 @@
-"""
-
-"""
-
+import json
 from .client import BaseClient
 from .baseapi import BaseApi
 from .server import BaseServer
@@ -47,3 +44,26 @@ class Easymirror(Mirror):
             "time": ticker["time"],
             "instrument_id": ticker["time"],
         }
+
+    def handlerTickerIndex(self, msg):
+        """
+
+        处理订阅到的时间戳
+
+        :param msg:
+        :return:
+        """
+
+        index = json.loads(msg)
+
+    QUERY_CMD = """SELECT * FROM ctp WHERE time = {};"""
+
+    def getTickerByAsk(self, ask):
+        """
+
+        :param ask:
+        :return:
+        """
+        time = ask["time"]
+        #
+        self.QUERY_CMD.format(time)

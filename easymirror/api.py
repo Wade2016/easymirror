@@ -3,8 +3,6 @@ from multiprocessing import Process, Queue
 import json
 import os
 from .dealutils import getConfPath
-# from threading import Thread as Process
-# from queue import Queue
 
 # 子进程通信队列
 queue = Queue()
@@ -18,6 +16,10 @@ def getMirror(_service, conf=None):
     :return:
     '''
     conf = conf or os.path.join(getConfPath(), 'conf.json')
+
+    # if __debug__:
+    #     from threading import Thread as Process
+    #     from queue import Queue
 
     return Process(target=_startMirror, args=[_service, conf, queue])
 
@@ -34,10 +36,13 @@ def pushTickerIndex(tickerIndex):
     '''
 
     :param tickerIndex:
+    :param _format: 将原始数据进行转化处理的函数
     :return:
     '''
 
-    queue.put(json.dumps(tickerIndex))
+    queue.put(
+        tickerIndex
+    )
 
 
 def _startMirror(service, conf, queue):
@@ -50,5 +55,3 @@ def _startMirror(service, conf, queue):
     m = importlib.import_module('easymirror.{}'.format(service))
     em = m.Easymirror(conf, queue)
     em.start()
-    while True:
-        pass
