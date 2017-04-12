@@ -3,10 +3,8 @@ import json
 import time
 import datetime
 import arrow
+import asyncio
 
-# from .client import BaseClient
-# from .baseapi import BaseApi
-# from .server import BaseServer
 from .mirror import Mirror
 import pymongo
 
@@ -23,10 +21,13 @@ class Easymirror(Mirror):
         """
         super(Easymirror, self).__init__(conf, queue)
         # 初始化本地数据库链接
+
+        self.log.info('建立 MongoDB 连接……')
         self.mongodb = pymongo.MongoClient(
             host=self.conf['host'],
             port=self.conf['port']
         )
+
         self.dbn = self.conf["TickerDB"]
 
     @property
@@ -104,8 +105,6 @@ class Easymirror(Mirror):
         if ticker:
             ticker.pop('_id')
 
-        print(1212, ticker['datetime'])
-
         return ticker
 
     def getAskMsg(self, index):
@@ -141,12 +140,18 @@ class Easymirror(Mirror):
 
         # TODO 获取所有表，调试中，暂时只读取rb1710
         tickers = []
+
         for t in self.mongodb[self.dbn]['rb1710'].find():
+
+            import random
+            if not random.randint(0, 10):
+                continue
+
             tickers.append(t)
             # 生成缓存
             self.tCache.put(
                 t[self.timename],
                 t[self.itemname],
             )
-
+        self.log.info('加载了 {} 条ticker数据'.format(str(len(tickers))))
         return tickers

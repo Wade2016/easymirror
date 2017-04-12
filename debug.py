@@ -2,6 +2,7 @@ import time
 import os
 from easymirror import api as emapi
 import datetime
+import asyncio
 
 # confDir = os.path.join(os.getcwd(), 'conf/conf.json')
 confDir = None

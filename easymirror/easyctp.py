@@ -3,7 +3,7 @@ import json
 from .client import BaseClient
 from .baseapi import BaseApi
 from .server import BaseServer
-from .mirror import Mirror
+from .mirror2 import Mirror
 
 
 class EasyctpServer(BaseServer):

@@ -2,17 +2,40 @@
 import json
 import logging
 import socket
-import threading
 import time
+import asyncio
+import sys
+import contextlib
+import traceback
+import queue
+from asyncio import sleep
+import functools
 
 try:
     import cPickle as pickle
 except ImportError:
     import pickle
-
 import redis
-
 from .timestampecache import TimestampeCache
+
+
+# from .pubtickerindex import PubTickerIndex
+
+# mirror = None
+#
+# def logerr(func):
+#     @functools.wraps(func)
+#     def wrapper(*args, **kw):
+#         try:
+#             return func(*args, **kw)
+#         except:
+#             print(121212)
+#             if __debug__:
+#                 traceback.print_exc()
+#             global mirror
+#             mirror.log.error(traceback.format_exc())
+#
+#     return wrapper
 
 
 class Mirror(object):
@@ -25,12 +48,29 @@ class Mirror(object):
     RECEIVE_CHANNEL_MODLE = 'receive:{}:{}'
 
     def __init__(self, conf, queue):
+        """
+
+        :param conf: 配置文件的路径
+        :param queue: 进程通信队列
+        """
+        global mirror
+        mirror = self
         self.queue = queue
+
         with open(conf, 'r') as f:
             conf = json.load(f)
         self.conf = conf[self.name]
         # 初始化日志
-        self._initLog()
+        self.log = self._initLog()
+
+        # 建立协程池
+        self.loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(self.loop)
+        if __debug__:
+            if sys.platform == 'win32':  # pragma: no cover
+                assert isinstance(self.loop, asyncio.windows_events._WindowsSelectorEventLoop)
+            else:
+                assert isinstance(self.loop, asyncio.unix_events._UnixSelectorEventLoop)
 
         # 本地主机名，同时也是在Server-Redis上的标志，不能存在相同的主机名，尤其在使用Docker部署时注意重名
         self.localhostname = self.conf['localhostname'] or socket.gethostname()
@@ -44,22 +84,41 @@ class Mirror(object):
         self.redis = redis.StrictRedis(
             **redisConf
         )
-        # TODO 检查Redis上的链接配置
 
         # 请求对齐用到的两个队列
         self.askchannel = self.ASK_CHANNEL_MODLE.format(self.name, self.localhostname)
 
         self.receivechannel = self.RECEIVE_CHANNEL_MODLE.format(self.name, self.localhostname)
         # self.askQueue = RedisQueue(self.name, client=self.redis)
+        # 订阅得到时间戳
+        self.subTickerQueue = asyncio.Queue()
+        # 接受到请求对齐的队列
+        self.revAskQueue = asyncio.Queue()
+        # 接受到补齐的数据队列
+        self.makeupTickerQueue = asyncio.Queue()
 
         # 循环逻辑
         self.__active = False
-        self.service = [
-            threading.Thread(target=self.pubTickerIndex, name=self.pubTickerIndex.__name__),
-            threading.Thread(target=self.subTickerIndex, name=self.subTickerIndex.__name__),
-            threading.Thread(target=self.handlerAsk, name=self.handlerAsk.__name__),
-            threading.Thread(target=self.handlerReceive, name=self.handlerReceive.__name__),
+
+        self.services = [
+            self.pubTickerIndex(),
+            self.subTickerIndex(),
+            self.handlerSubTicker(),
+            self.recAsk(),
+            self.handlerAsk(),
+            self.recvTicker(),
+            self.makeup(),
         ]
+
+        # self.services = [
+        # threading.Thread(target=self.pubTickerIndex, name=self.pubTickerIndex.__name__),
+        # threading.Thread(target=self.subTickerIndex, name=self.subTickerIndex.__name__),
+        # threading.Thread(target=self.handlerSubTicker, name=self.handlerSubTicker.__name__),
+        # threading.Thread(target=self.recAsk, name=self.recAsk.__name__),
+        # threading.Thread(target=self.handlerAsk, name=self.handlerAsk.__name__),
+        # threading.Thread(target=self.recvTicker, name=self.recvTicker.__name__),
+        # threading.Thread(target=self.makeup, name=self.makeup.__name__),
+        # ]
 
         # 忽略的主机名，一般在订阅行情中忽略自己发布的行情
         self.filterHostnames = {self.localhostname, }
@@ -68,7 +127,6 @@ class Mirror(object):
         self.tCache = TimestampeCache()
 
         self.counts = [0, 0, 0, 0, 0]
-
 
     def indexLike(self):
         """
@@ -113,19 +171,27 @@ class Mirror(object):
         初始化日志
         :return:
         """
-        self.log = logging.getLogger(self.name)
-        self.log.setLevel("INFO")
+        log = logging.getLogger(self.name)
+        log.setLevel("INFO")
 
-        sh = logging.FileHandler(self.conf["log"])
-        sh.setLevel("INFO")
-        sh.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-        self.log.addHandler(sh)
+        logFormatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
+
+        fh = logging.FileHandler(self.conf["log"])
+        fh.setLevel("INFO")
+        fh.setFormatter(logFormatter)
+        log.addHandler(fh)
 
         if __debug__:
-            self.log.debug = print
-            self.log.setLevel("DEBUG")
-            # sh.setLevel("DEBUG")
-            self.log.debug("初始化日志完成")
+            # self.log.debug = print
+            # 屏幕输出
+            sh = logging.StreamHandler(sys.stdout)
+            sh.setFormatter(logFormatter)
+            sh.setLevel('DEBUG')
+            log.addHandler(sh)
+
+            # log.setLevel("DEBUG")
+            log.debug("初始化日志完成")
+        return log
 
     def start(self):
         """
@@ -133,54 +199,64 @@ class Mirror(object):
         :return:
         """
         self.__active = True
-        for s in self.service:
-            if not s.isAlive():
-                self.log.info('{} 服务开始'.format(s.name))
-                s.start()
+        self.loop.run_until_complete(
+            asyncio.wait(self.services)
+        )
+        self.loop.close()
 
-                # self.run()
+        # for s in self.services:
+        #     assert asyncio.iscoroutine(s)
+        #         self.log.info('{} 服务开始'.format(s.name))
 
-    def stop(self):
-        """
+        # self.run()
 
-        :return:
-        """
+    def close(self):
         self.__active = False
-        self.log.info("服务结束")
 
-        self.log.info('广播:{} 收:{} 索取:{} 被索取:{} 接受:{}'.format(*self.counts))
+        self.log.info("即将关闭服务……")
 
-        for s in self.service:
-            if s.isAlive():
-                self.log.info('{} 服务结束中……'.format(s.name))
-                s.join()
-                self.log.info('{} 服务结束!'.format(s.name))
+    #     self.loop.close()
 
     @property
     def tickerchannel(self):
         return 'ticker:{}'.format(self.name)
 
-    def subTickerIndex(self):
+    async def subTickerIndex(self):
         self.log.info("开始订阅频道 {}".format(self.tickerchannel))
-        sub = self.redis.pubsub()
-        sub.subscribe(self.tickerchannel)
-        while self.__active:
-            self._subTickerIndex(sub)
 
-    def _subTickerIndex(self, sub):
+        with contextlib.closing(self.redis.pubsub()) as sub:
+            sub.subscribe(self.tickerchannel)
+            try:
+                while self.__active:
+                    msg = sub.get_message(ignore_subscribe_messages=True)
+                    if msg is None:
+                        await sleep(0)
+                        continue
+
+                    if __debug__: self.log.debug("收到时间戳 {}".format(msg))
+
+                    # 堆入本地时间戳队列等待处理
+                    await self.subTickerQueue.put(msg)
+            except:
+                if __debug__:
+                    traceback.print_exc()
+                self.log.error(traceback.format_exc())
+
+    async def handlerSubTicker(self):
         """
-
-        订阅时间戳
-
+        处理订阅得到的时间戳
         :return:
         """
-        msg = sub.get_message(ignore_subscribe_messages=True)
+        try:
+            while self.__active:
+                await self._handlerSubTicker()
+        except:
+            if __debug__:
+                traceback.print_exc()
+            self.log.error(traceback.format_exc())
 
-        if not msg:
-            return
-
-        if __debug__: self.log.debug("收到时间戳 {}".format(msg))
-
+    async def _handlerSubTicker(self):
+        msg = await self.subTickerQueue.get()
         channel = msg["channel"].decode('utf8')
         if self.tickerchannel != channel:
             # 不是ticker广播数据
@@ -204,20 +280,24 @@ class Mirror(object):
         # index 格式见 indexLike
         self.ask(index)
 
-    def pubTickerIndex(self):
+    async def pubTickerIndex(self):
         self.log.info("开始发布")
-        while self.__active:
-            self._pubTickerIndex()
+        try:
+            while self.__active:
+                self._pubTickerIndex()
+                await sleep(0)
+        except:
+            if __debug__:
+                traceback.print_exc()
+            self.log.error(traceback.format_exc())
 
     def _pubTickerIndex(self):
-        """
-        汇报Ticker时间戳
 
-        :return:
-        """
-
-        if __debug__: self.log.debug("等待Ticker数据")
-        ticker = self.queue.get()
+        try:
+            # 进程的通信队列，不能用 await
+            ticker = self.queue.get_nowait()
+        except queue.Empty:
+            return
 
         if __debug__: self.log.debug("收到Ticker数据 {}".format(ticker))
 
@@ -257,33 +337,42 @@ class Mirror(object):
         """
         raise NotImplemented()
 
-    # def run(self):
-    #     """
-    #     主进程的操作
-    #     :return:
-    #     """
-    #     while self.__active:
-    #         pass
+    async def recAsk(self):
+        self.log.info('listen ask : {}'.format(self.askchannel))
+        try:
+            while self.__active:
+                # 非阻塞，获取请求对齐
+                msg = self.redis.lpop(self.askchannel)
+                if msg is None:
+                    await sleep(0)
+                    continue
 
-    def handlerAsk(self):
+                await self.revAskQueue.put(msg)
+        except:
+            if __debug__:
+                traceback.print_exc()
+            self.log.error(traceback.format_exc())
+
+    async def handlerAsk(self):
         """
         处理收到的请求对齐
         :return:
         """
-        self.log.info('listen ask : {}'.format(self.askchannel))
-        while self.__active:
-            self._handlerAsk()
+        self.log.info('begin to handler ask ...')
+        try:
+            while self.__active:
+                # 非阻塞，获取请求对齐
+                await self._handlerAsk()
+        except:
+            if __debug__:
+                traceback.print_exc()
+            self.log.error(traceback.format_exc())
 
-    def _handlerAsk(self):
-
-        # 阻塞，获取请求对齐
-        # ask = self.askQueue.get()
-        msg = self.redis.blpop(self.askchannel, timeout=5)
-        if not msg:
-            return
+    async def _handlerAsk(self):
+        msg = await self.revAskQueue.get()
         self.counts[3] = self.counts[3] + 1
-        ask = msg[1]
-        ask = self.unpackage(ask)
+        ask = self.unpackage(msg)
+
         # 查询本地的 Ticker 数据
         ticker = self.getTickerByAsk(ask)
         # 返回 Ticker 数据
@@ -358,22 +447,45 @@ class Mirror(object):
         channel = self.RECEIVE_CHANNEL_MODLE.format(self.name, hostname)
         self.redis.rpush(channel, self.package(ticker))
 
-    def handlerReceive(self):
+    async def recvTicker(self):
         """
         接受补齐的数据
         :return:
         """
+        self.log.info('recvTicker start ...')
+        try:
+            while self.__active:
+                # 非阻塞，获取请求对齐
+                await self._recvTicker()
+        except:
+            if __debug__:
+                traceback.print_exc()
+            self.log.error(traceback.format_exc())
 
-        while self.__active:
-            self._handlerReceive()
+    async def _recvTicker(self):
 
-    def _handlerReceive(self):
-
-        msg = self.redis.blpop(self.receivechannel, timeout=5)
-        if not msg:
+        msg = self.redis.lpop(self.receivechannel)
+        if msg is None:
+            await sleep(0)
             return
+        else:
+            await self.makeupTickerQueue.put(msg)
+
+    async def makeup(self):
+        self.log.info('makeup start ...')
+        try:
+            while self.__active:
+                # 非阻塞，获取请求对齐
+                await self._makeup()
+        except:
+            if __debug__:
+                traceback.print_exc()
+            self.log.error(traceback.format_exc())
+
+    async def _makeup(self):
+        ticker = await self.makeupTickerQueue.get()
         self.counts[4] = self.counts[4] + 1
-        ticker = msg[1]
+
         ask = self.unpackage(ticker)
         self.makeupTicker(ask)
 
@@ -391,3 +503,33 @@ class Mirror(object):
         :return:
         """
         raise NotImplemented()
+
+    def dailyMakeup(self, pushTickerIndex):
+        """
+        插入广播数据的接口
+        :param pushTickerIndex:
+        :return:
+        """
+        # 加载当日缓存数据
+        tickers = self.loadToday()
+
+        self.services.append(self.pushTicker(tickers, pushTickerIndex))
+        self.start()
+
+    async def pushTicker(self, tickers, pushTickerIndex):
+        # tickers = tickers[:100]
+        total = len(tickers)
+        num = 0
+
+        await sleep(2)
+
+        # 开始广播数据并进行对齐
+        for t in tickers:
+            pushTickerIndex(t)
+            num += 1
+            await sleep(0)
+
+        self.log.info('广播结束 {} / {}'.format(num, total))
+        await sleep(3)
+        self.log.info('广播:{} 收:{} 索取:{} 被索取:{} 接受:{}'.format(*self.counts))
+        self.close()
