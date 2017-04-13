@@ -1,0 +1,9 @@
+{
+  "easyctp": {
+    "vaild": true,
+    "logdir": "./log",
+    "logzmqhost": "127.0.0.1:24001",
+    "repAddress": "tcp://*:23001",
+    "pubAddress": "tcp://*:23002"
+  }
+}
