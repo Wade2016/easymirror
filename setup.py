@@ -7,7 +7,7 @@ def read(fname):
         return f.read()
 
 
-__version__ = "0.0.2"
+__version__ = "0.0.3"
 
 setup(name='easymirror',
       version=__version__,

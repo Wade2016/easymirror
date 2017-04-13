@@ -27,13 +27,15 @@ pip install -e .
 ### 1. 实盘中对齐（未实现）
 1. demo见`debug.py`文件。
 2. 在子进程中建立服务后，通过`api.pushTickerIndex`接口推入Ticker数据。
+3. 代码基于`python3.5`的协程来实现。如果实盘数据录入不是`python3.5`以上，那么只能使用`盘后对齐`的功能
 
-### 2. 盘后对齐（不稳定）
+### 2. 盘后对齐
 1. demo见`makeup.py`文件。
 2. 先从数据库中加载 ticker 数据，并缓存。
 3. 开始广播前，所有在线的节点都需要在本地做好缓存。
 4. 通过调用`api.pushTickerIndex`接口开始广播。
-5. 由于目前没有处理好订阅数据的逻辑，数据丢失的比例很大。
+5. 使用的`python3.5`的协程来实现并发。
 
 ### 3. 二次开发
 参考`easymirror.vnpy.py`，通过继承`easymirro.mirror.Mirror`来重写部分接口。
+
