@@ -1,3 +1,4 @@
+# encoding: UTF-8
 import os
 import sys
 import json
@@ -5,7 +6,8 @@ from multiprocessing import Process, Queue
 from logbook.queues import ZeroMQSubscriber
 from logbook import StreamHandler
 
-from .futuresclient import FuturesClient
+# from .futuresclient import FuturesClient
+from .easyctp import EasyctpClient
 
 
 class ClientEngine(object):
@@ -34,15 +36,15 @@ class ClientEngine(object):
             subscriber.dispatch_in_background(self.streamHandler)
 
         # 期货行情
-        conf = self.conf["futures"]
-        self.futuresProcess = Process(target=FuturesClient.process, args=[self.q], kwargs=conf)
+        conf = self.conf["easyctp"]
+        self.easyctpProcess = Process(target=EasyctpClient.process, args=[self.q], kwargs=conf)
 
     def start(self):
         """
         启动所有服务
         :return:
         """
-        self.futuresProcess.start()
+        self.easyctpProcess.start()
 
 
 if __name__ == "__main__":

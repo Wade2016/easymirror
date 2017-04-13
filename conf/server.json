@@ -1,5 +1,5 @@
 {
-  "futures": {
+  "easyctp": {
     "vaild": true,
     "logdir": "./log",
     "logzmqhost": "127.0.0.1:24001",

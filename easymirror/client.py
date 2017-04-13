@@ -1,4 +1,4 @@
-# encoding: utf-8
+# encoding: UTF-8
 
 import os
 import threading
@@ -19,7 +19,7 @@ class BaseClient(RpcObject):
     def name(self):
         return self.__class__.__name__
 
-    def __init__(self, reqAddress, subAddress, vaild=True, logdir="../log", logzmqhost=None):
+    def __init__(self, reqAddress, subAddress, vaild=True, logdir="../log", logzmqhost=None, tickerAddress=None):
         """Constructor"""
 
         self.__initLog(logdir, logzmqhost)
@@ -34,17 +34,24 @@ class BaseClient(RpcObject):
         # 使用 JSON 解包
         self.useMsgpack()
 
-        # zmq端口相关
+        # 循环为激活状态
+        self.__active = False  # 客户端的工作状态
+
+        # 与服务器端的交互线程
         self.__reqAddress = reqAddress
         self.__subAddress = subAddress
-
         self.__context = zmq.Context()
         self.__socketREQ = self.__context.socket(zmq.REQ)  # 请求发出socket
         self.__socketSUB = self.__context.socket(zmq.SUB)  # 广播订阅socket
-
         # 工作线程相关，用于处理服务器推送的数据
-        self.__active = False  # 客户端的工作状态
         self.__thread = threading.Thread(target=self.run)  # 客户端的工作线程
+
+        # Ticker 数据订阅
+        self.__tickerAddress = tickerAddress
+        self.__socketSUBTicker = self.__context.socket(zmq.SUB)  # 响应数据索引插入
+        self.__threadSUBTicker = threading.Thread(
+            name="{}TickSUB".format(self.name),
+            target=self.subscribeTicker)  # 客户端的工作线程
 
     # ----------------------------------------------------------------------
     def __initLog(self, logdir, logzmqhost):
@@ -96,12 +103,20 @@ class BaseClient(RpcObject):
         self.__socketREQ.connect(self.__reqAddress)
         self.__socketSUB.connect(self.__subAddress)
 
+        # 订阅 Ticker 数据
+        self.__socketSUBTicker.connect(self.__tickerAddress)
+        self.__socketSUBTicker.setsockopt(zmq.SUBSCRIBE, b'')
+
         # 将服务器设为启动
         self.__active = True
 
         # 启动工作线程
         if not self.__thread.isAlive():
             self.__thread.start()
+
+        self.__activeInsert = True
+        if not self.__threadSUBTicker.isAlive():
+            self.__threadSUBTicker.start()
 
     # ----------------------------------------------------------------------
     def stop(self):
@@ -113,13 +128,13 @@ class BaseClient(RpcObject):
         if self.__thread.isAlive():
             self.__thread.join()
 
+        if self.__threadInsert.isAlive():
+            self.__threadSUBTicker.join()
+
     @log.stdout
     @log.file
     def run(self):
         while self.__active:
-            import time
-            time.sleep(1)
-            self.log.warn("接受广播")
             # 接受广播
             self.subRev()
             # 发送数据
@@ -141,33 +156,37 @@ class BaseClient(RpcObject):
         # 序列化解包
         data = self.unpack(datab)
 
+        self.log.debug("获得订阅消息{}".format(str(data)))
+
         # 调用回调函数处理
         self.callback(topic, data)
 
+    @log.stdout
     def reqSend(self):
         """
         发送数据
         :return:
         """
-        req = ['foo', ('argg'), {"kwargs": 1}]
+        # req = ['foo', ('argg'), {"kwargs": 1}]
+        #
+        # # 序列化
+        # reqb = self.pack(req)
+        #
+        # self.log.debug("往服务器端发送数据")
+        #
+        # self.__socketREQ.send(reqb)
+        #
+        # self.log.debug("等待数据返回")
 
-        # 序列化
-        reqb = self.pack(req)
+        # datab = self.__socketREQ.recv_json()
 
-        self.__socketREQ.send(reqb)
-
-        datab = self.__socketREQ.recv_json()
-
-        # 序列化解包
-        rep = self.unpack(datab)
-
-        if rep[0]:
-            return rep[1]
-        else:
-            raise RemoteException(rep[1])
-
-
-            # ----------------------------------------------------------------------
+        # # 序列化解包
+        # rep = self.unpack(datab)
+        #
+        # if rep[0]:
+        #     return rep[1]
+        # else:
+        #     raise RemoteException(rep[1])
 
     def callback(self, topic, data):
         """回调函数，必须由用户实现"""
@@ -200,3 +219,25 @@ class BaseClient(RpcObject):
                 if input("是否退出(yes/no):") == "yes":
                     break
         client.stopServer()
+
+    @log.stdout
+    def subscribeTicker(self):
+        """
+        插入数据
+        :return:
+        """
+        self.log.warning("开始订阅数据")
+        while self.__active:
+            self._subscribeTicker()
+
+    @log.stdout
+    @log.file
+    def _subscribeTicker(self):
+        if not self.__socketSUBTicker.poll(1000):
+            # 等待广播
+            return
+
+        # 接受广播
+        ticker = self.__socketSUBTicker.recv_json()
+
+        self.log.debug("收到订阅的ticker: {}".format(str(ticker)))

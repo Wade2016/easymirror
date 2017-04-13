@@ -1,3 +1,4 @@
+# encoding: UTF-8
 import doctest
 import logbook
 logbook.set_datetime_format("local")
