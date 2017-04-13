@@ -126,11 +126,8 @@ class Easymirror(Mirror):
             self.timename: ticker[self.timename],
         }
 
-        print(1313, ticker[self.timename], ticker[self.itemname])
-
         # 如果不存在，保存ticker数据
-        # TODO 测试中，暂时不保存
-        # self.mongodb[self.dbn][ticker[self.itemname]].update_one(ticker, query, upsert=True)
+        self.mongodb[self.dbn][ticker[self.itemname]].update_one(query, {'$set': ticker}, upsert=True)
 
     def loadToday(self):
         """
@@ -140,6 +137,8 @@ class Easymirror(Mirror):
 
         # TODO 获取所有表，调试中，暂时只读取rb1710
         tickers = []
+
+        self.log.info('开始加载今日数据')
 
         for t in self.mongodb[self.dbn]['rb1710'].find():
 

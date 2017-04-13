@@ -10,6 +10,7 @@ import traceback
 import queue
 from asyncio import sleep
 import functools
+import collections
 
 try:
     import cPickle as pickle
@@ -89,7 +90,7 @@ class Mirror(object):
         self.askchannel = self.ASK_CHANNEL_MODLE.format(self.name, self.localhostname)
 
         self.receivechannel = self.RECEIVE_CHANNEL_MODLE.format(self.name, self.localhostname)
-        # self.askQueue = RedisQueue(self.name, client=self.redis)
+
         # 订阅得到时间戳
         self.subTickerQueue = asyncio.Queue()
         # 接受到请求对齐的队列
@@ -126,7 +127,9 @@ class Mirror(object):
         # 索引的缓存，用来对比是否缺失数据
         self.tCache = TimestampeCache()
 
-        self.counts = [0, 0, 0, 0, 0]
+        self.counts = collections.OrderedDict(
+            (('广播',  0), ('收听',  0), ('索取',  0), ('被索取',  0), ('补齐',  0))
+        )
 
     def indexLike(self):
         """
@@ -270,7 +273,7 @@ class Mirror(object):
         if index.get("hostname") in self.filterHostnames:
             return
 
-        self.counts[1] = self.counts[1] + 1
+        self.counts['收听'] = self.counts['收听'] + 1
 
         # 检查数据是否缺失
         if self.tCache.isHave(index[self.timename], index[self.itemname]):
@@ -311,7 +314,7 @@ class Mirror(object):
         # 缓存数据
         self.tCache.put(timestamp[self.timename], timestamp[self.itemname])
 
-        self.counts[0] = self.counts[0] + 1
+        self.counts['广播'] = self.counts['广播'] + 1
 
         timestamp = self.package(timestamp)
         self.redis.publish(self.tickerchannel, timestamp)
@@ -370,7 +373,7 @@ class Mirror(object):
 
     async def _handlerAsk(self):
         msg = await self.revAskQueue.get()
-        self.counts[3] = self.counts[3] + 1
+        self.counts['被索取'] = self.counts['被索取'] + 1
         ask = self.unpackage(msg)
 
         # 查询本地的 Ticker 数据
@@ -394,10 +397,8 @@ class Mirror(object):
         ask = self.package(ask)
         # 对方频道
         channel = self.ASK_CHANNEL_MODLE.format(self.name, index['hostname'])
-        self.counts[2] = self.counts[2] + 1
+        self.counts['索取'] = self.counts['索取'] + 1
         self.redis.rpush(channel, ask)
-
-        # self.askQueue.put(ask)
 
     def getAskMsg(self, index):
         """
@@ -484,7 +485,7 @@ class Mirror(object):
 
     async def _makeup(self):
         ticker = await self.makeupTickerQueue.get()
-        self.counts[4] = self.counts[4] + 1
+        self.counts['补齐'] = self.counts['补齐'] + 1
 
         ask = self.unpackage(ticker)
         self.makeupTicker(ask)
@@ -513,15 +514,15 @@ class Mirror(object):
         # 加载当日缓存数据
         tickers = self.loadToday()
 
-        self.services.append(self.pushTicker(tickers, pushTickerIndex))
+        self.services.append(self.pushTicker2Makeup(tickers, pushTickerIndex))
         self.start()
 
-    async def pushTicker(self, tickers, pushTickerIndex):
-        # tickers = tickers[:100]
+    async def pushTicker2Makeup(self, tickers, pushTickerIndex):
+        # tickers = tickers[:1000]
         total = len(tickers)
         num = 0
 
-        await sleep(2)
+        await sleep(5)
 
         # 开始广播数据并进行对齐
         for t in tickers:
@@ -530,6 +531,13 @@ class Mirror(object):
             await sleep(0)
 
         self.log.info('广播结束 {} / {}'.format(num, total))
-        await sleep(3)
-        self.log.info('广播:{} 收:{} 索取:{} 被索取:{} 接受:{}'.format(*self.counts))
-        self.close()
+
+        try:
+            while self.counts['索取'] > 0 and self.counts['索取'] != self.counts['补齐']:
+                self.log.info(str(self.counts))
+                await sleep(10)
+            self.log.info(str(self.counts))
+            self.close()
+        except:
+            traceback.print_exc()
+
