@@ -1,4 +1,4 @@
-zmq
-logbook
 redis
 arrow
+motor
+aioredis

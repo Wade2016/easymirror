@@ -46,7 +46,6 @@ class Mirror(object):
         self.redis = redis.StrictRedis(
             **redisConf
         )
-        # TODO 检查Redis上的链接配置
 
         # 请求对齐用到的两个队列
         self.askchannel = self.ASK_CHANNEL_MODLE.format(self.name, self.localhostname)
@@ -65,7 +64,7 @@ class Mirror(object):
         self.__active = False
         self.service = [
             threading.Thread(target=self.pubTickerIndex, name=self.pubTickerIndex.__name__),
-            threading.Thread(target=self.subTickerIndex, name=self.subTickerIndex.__name__),
+            threadinding.Thread(target=self.subTickerIndex, name=self.subTickerIndex.__name__),
             threading.Thread(target=self.handlerSubTicker, name=self.handlerSubTicker.__name__),
             threading.Thread(target=self.recAsk, name=self.recAsk.__name__),
             threading.Thread(target=self.handlerAsk, name=self.handlerAsk.__name__),
