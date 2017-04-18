@@ -75,7 +75,6 @@ class Easymirror(Mirror):
 
         :return:
         """
-
         return {
             "datetime": ticker["datetime"],
             "symbol": ticker["symbol"],
@@ -101,7 +100,7 @@ class Easymirror(Mirror):
         symbol = ask["symbol"]
 
         cmd = {
-            "datetime": ask["datetime"],
+            "datetime": datetime.datetime.fromtimestamp(ask["datetime"]),
         }
         # ticker 格式为 [{}]
         ticker = await self.db[symbol].find_one(cmd)
@@ -165,23 +164,30 @@ class Easymirror(Mirror):
                     collectionNames.append(colName)
                     break
 
-        self.log.info('对齐以下集合: {}'.format(','.join(collectionNames)))
+        self.log.info('对齐以下合约: {}'.format(','.join(collectionNames)))
 
         tickers = []
 
+        colsNum = len(collectionNames)
+        num = 0
         db = self.pymongoCLient[self.dbn]
-        for colName in collectionNames:
-            for t in db[colName].find({'date': {'$gte': preDate}}):
+        for n, colName in enumerate(collectionNames):
+            if __debug__:
+                self.log.debug('加载合约 {} {}/{}'.format(colName, n+1, colsNum))
+            with db[colName].find({'date': {'$gte': preDate}}) as cursor:
+                for t in cursor.distinct(self.timename):
 
-                import random
-                if random.randint(0, 10) == 1:
-                    continue
+                    if __debug__:
+                        num += 1
+                        if num % 10000 == 0:
+                            self.log.debug('已经加载 %s 条数据' % num)
+                    timestamp = t.timestamp()
+                    tickers.append({self.timename: timestamp, self.itemname: colName})
 
-                tickers.append(t)
-                # 生成缓存
-                self.tCache.put(
-                    t[self.timename],
-                    t[self.itemname],
-                )
+                    # 生成缓存
+                    self.tCache.put(
+                        timestamp,
+                        colName,
+                    )
         self.log.info('加载了 {} 条ticker数据'.format(str(len(tickers))))
         return tickers

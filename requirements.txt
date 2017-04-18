@@ -1,4 +1,3 @@
 redis
 arrow
 motor
-aioredis

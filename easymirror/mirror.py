@@ -59,9 +59,14 @@ class Mirror(object):
         # 建立协程池
         self.loop = asyncio.new_event_loop()
         asyncio.set_event_loop(self.loop)
+
         # 退出信号的调用
+        def myHandler(signum, frame):
+            self.stop()
+
         for sig in [signal.SIGINT]:
-            self.loop.add_signal_handler(sig, self.stop)
+            # self.loop.add_signal_handler(sig, self.stop)
+            signal.signal(sig, myHandler)
 
         if __debug__:
             if sys.platform == 'win32':  # pragma: no cover
@@ -82,6 +87,7 @@ class Mirror(object):
         self.redis = redis.StrictRedis(
             **self.redisConf
         )
+        self.log.info('redis connect to {}:{}'.format(self.redisConf['host'], self.redisConf['port']))
 
         # 请求对齐用到的两个频道名
         self.askchannel = self.ASK_CHANNEL_MODLE.format(self.name, self.localhostname)
@@ -178,7 +184,7 @@ class Mirror(object):
             sh.setLevel('DEBUG')
             log.addHandler(sh)
 
-            # log.setLevel("DEBUG")
+            log.setLevel("DEBUG")
             log.debug("初始化日志完成")
         return log
 
@@ -225,8 +231,6 @@ class Mirror(object):
                     if msg is None:
                         await sleep(0.1)
                         continue
-
-                    if __debug__: self.log.debug("收到时间戳 {}".format(msg))
 
                     # 堆入本地时间戳队列等待处理
                     await asyncio.wait_for(self.subTickerQueue.put(msg), timeout=self.CORO_TIME_OUT)
@@ -308,8 +312,6 @@ class Mirror(object):
         except queue.Empty:
             return
 
-        if __debug__: self.log.debug("收到Ticker数据 {}".format(ticker))
-
         timestamp = self._stmptime(ticker)
         # 主机名
         timestamp["hostname"] = self.localhostname
@@ -324,8 +326,6 @@ class Mirror(object):
 
         timestamp = self.package(timestamp)
         self.redis.publish(self.tickerchannel, timestamp)
-
-        if __debug__: self.log.debug("汇报时间戳 {}".format(timestamp))
 
     def _stmptime(self, ticker):
         """
@@ -384,8 +384,6 @@ class Mirror(object):
         ask['hostname'] = self.localhostname
         ask = self.getAskMsg(ask)
 
-        if __debug__:
-            self.log.debug("发起请求 {}".format(ask))
         ask = self.package(ask)
         # 对方频道
         channel = self.ASK_CHANNEL_MODLE.format(self.name, index['hostname'])
@@ -480,8 +478,11 @@ class Mirror(object):
         :param pushTickerIndex:
         :return:
         """
-        # 加载当日缓存数据
+        # 获得当日数据的生成器
         tickers = self.loadToday()
+
+        if __debug__:
+            self._makeupBeginTime = datetime.datetime.now()
 
         asyncio.ensure_future(self.pushTicker2Makeup(tickers, pushTickerIndex), loop=self.loop)
         self.start()
@@ -496,10 +497,13 @@ class Mirror(object):
 
         self.log.info('开始广播……')
 
-        # 等待 n 秒之后开始广播
-        # await sleep(waitTime.total_seconds())
-
-        await sleep(10)
+        if __debug__:
+            b = self._makeupBeginTime + datetime.timedelta(seconds=60)
+            while datetime.datetime.now() < b:
+                await sleep(1)
+        else:
+            # 等待 n 秒之后开始广播
+            await sleep(waitTime.total_seconds())
 
         # 开始广播数据并进行对齐
         for t in tickers:
@@ -507,24 +511,25 @@ class Mirror(object):
             num += 1
             if __debug__:
                 if not num % 10000:
-                    self.log.info(str(self.counts))
+                    self.log.debug(str(self.counts))
             await sleep(0)
 
         self.log.info('广播结束 {} / {}'.format(num, total))
         await sleep(1)
         self.log.info(str(self.counts))
 
-        endTime = self.endMakeupTime()
-
-        # TODO 测试代码
-        endTime = datetime.datetime.now() + datetime.timedelta(seconds=60 * 60)
+        if __debug__:
+            endTime = datetime.datetime.now() + datetime.timedelta(seconds=60 * 60)
+        else:
+            # 关闭服务的时间
+            endTime = self.endMakeupTime()
 
         self.log.info(str(self.counts))
         try:
             while datetime.datetime.now() < endTime:
                 await sleep(10)
                 if __debug__:
-                    self.log.info(str(self.counts))
+                    self.log.debug(str(self.counts))
 
             self.log.info(str(self.counts))
             if self.__active:
@@ -534,7 +539,7 @@ class Mirror(object):
 
     # 开始盘后广播的时间
     AFTER_MAKEUP_BROADCAST_TIME = [
-        datetime.time(3),  # 凌晨3点
+        datetime.time(4),  # 凌晨4点
         datetime.time(16),  # 下午4点
     ]
 
