@@ -74,7 +74,8 @@ def makeup(_service, conf=None):
     #     from threading import Thread as Process
     #     from queue import Queue
 
-    return Process(target=_makeup, args=[_service, conf, queue])
+    # return Process(target=_makeup, args=[_service, conf, queue])
+    _makeup(_service, conf, queue)
 
 
 def _makeup(service, conf, queue):

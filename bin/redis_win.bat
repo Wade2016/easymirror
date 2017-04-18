@@ -1,0 +1,1 @@
+redis-server ../conf/23002.conf

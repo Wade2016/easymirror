@@ -1,4 +1,3 @@
-zmq
-logbook
 redis
 arrow
+motor

@@ -9,4 +9,4 @@ confDir = os.path.join(os.getcwd(), 'tmp/conf.json')
 # confDir = None
 em = emapi.makeup("vnpy", confDir)
 # time.sleep(1)
-em.start()
+# em.start()

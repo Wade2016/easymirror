@@ -1,12 +1,10 @@
 # encoding: UTF-8
 import json
-import time
 import datetime
-import arrow
-import asyncio
 
 from .mirror import Mirror
 import pymongo
+import motor.motor_asyncio
 
 
 class Easymirror(Mirror):
@@ -21,14 +19,20 @@ class Easymirror(Mirror):
         """
         super(Easymirror, self).__init__(conf, queue)
         # 初始化本地数据库链接
-
-        self.log.info('建立 MongoDB 连接……')
-        self.mongodb = pymongo.MongoClient(
+        self.counts['存库'] = 0
+        self.log.info('建立 MongoDB 连接 {host}:{port}'.format(**self.conf))
+        self.client = motor.motor_asyncio.AsyncIOMotorClient(
             host=self.conf['host'],
             port=self.conf['port']
         )
 
         self.dbn = self.conf["TickerDB"]
+        self.db = self.client[self.dbn]
+
+        self.pymongoCLient = pymongo.MongoClient(
+            host=self.conf['host'],
+            port=self.conf['port']
+        )
 
     @property
     def indexLike(self):
@@ -71,7 +75,6 @@ class Easymirror(Mirror):
 
         :return:
         """
-
         return {
             "datetime": ticker["datetime"],
             "symbol": ticker["symbol"],
@@ -88,7 +91,7 @@ class Easymirror(Mirror):
 
         return json.loads(msg)
 
-    def getTickerByAsk(self, ask):
+    async def getTickerByAsk(self, ask):
         """
         从本地查询需要对齐的ticker数据给对方
         :param ask:
@@ -97,10 +100,10 @@ class Easymirror(Mirror):
         symbol = ask["symbol"]
 
         cmd = {
-            "datetime": ask["datetime"],
+            "datetime": datetime.datetime.fromtimestamp(ask["datetime"]),
         }
         # ticker 格式为 [{}]
-        ticker = self.mongodb[self.dbn][symbol].find_one(cmd)
+        ticker = await self.db[symbol].find_one(cmd)
 
         if ticker:
             ticker.pop('_id')
@@ -116,8 +119,10 @@ class Easymirror(Mirror):
         index["hostname"] = self.localhostname
         return index
 
-    def makeupTicker(self, ticker):
+    async def makeupTicker(self, ticker):
         """
+
+
 
         :param ticker:
         :return:
@@ -127,7 +132,9 @@ class Easymirror(Mirror):
         }
 
         # 如果不存在，保存ticker数据
-        self.mongodb[self.dbn][ticker[self.itemname]].update_one(query, {'$set': ticker}, upsert=True)
+        # await self.db[ticker[self.itemname]].update_one(query, {'$set': ticker}, upsert=True)
+        self.counts['存库'] += 1
+
 
     def loadToday(self):
         """
@@ -135,22 +142,52 @@ class Easymirror(Mirror):
         :return:
         """
 
-        # TODO 获取所有表，调试中，暂时只读取rb1710
+        db = self.db
+
+        # 协程
+        allCollectionNames = self.loop.run_until_complete(db.collection_names())
+
+        preDates = []
+        today = datetime.date.today()
+        preDate = today.strftime('%Y%m%d')
+        for d in range(self.PRE_DAYS):
+            preDate = today - datetime.timedelta() - datetime.timedelta(days=d)
+            preDate = preDate.strftime('%Y%m%d')
+            preDates.append(preDate)
+
+        # 两天内的数据进行对齐，比如今天是4月16日，那么对4月15日和16日的数据进行对齐
+        collectionNames = []
+        for colName in allCollectionNames:
+            for d in preDates:
+                if self.loop.run_until_complete(db[colName].find_one({'date': d})):
+                    # 这个集合有需要对齐的数据
+                    collectionNames.append(colName)
+                    break
+
+        self.log.info('对齐以下合约: {}'.format(','.join(collectionNames)))
+
         tickers = []
 
-        self.log.info('开始加载今日数据')
+        colsNum = len(collectionNames)
+        num = 0
+        db = self.pymongoCLient[self.dbn]
+        for n, colName in enumerate(collectionNames):
+            if __debug__:
+                self.log.debug('加载合约 {} {}/{}'.format(colName, n+1, colsNum))
+            with db[colName].find({'date': {'$gte': preDate}}) as cursor:
+                for t in cursor.distinct(self.timename):
 
-        for t in self.mongodb[self.dbn]['rb1710'].find():
+                    if __debug__:
+                        num += 1
+                        if num % 10000 == 0:
+                            self.log.debug('已经加载 %s 条数据' % num)
+                    timestamp = t.timestamp()
+                    tickers.append({self.timename: timestamp, self.itemname: colName})
 
-            import random
-            if not random.randint(0, 10):
-                continue
-
-            tickers.append(t)
-            # 生成缓存
-            self.tCache.put(
-                t[self.timename],
-                t[self.itemname],
-            )
+                    # 生成缓存
+                    self.tCache.put(
+                        timestamp,
+                        colName,
+                    )
         self.log.info('加载了 {} 条ticker数据'.format(str(len(tickers))))
         return tickers
