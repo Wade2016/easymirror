@@ -76,9 +76,10 @@ class Mirror(object):
 
         # 本地主机名，同时也是在Server-Redis上的标志，不能存在相同的主机名，尤其在使用Docker部署时注意重名
         self.localhostname = self.conf['localhostname'] or socket.gethostname()
-        if __debug__:
-            # 随机构建不重名的主机名
-            self.localhostname = str(time.time())[-3:]
+
+        # if __debug__:
+        #     # 随机构建不重名的主机名
+        #     self.localhostname = str(time.time())[-3:]
 
         self.log.info('localhostname {}'.format(self.localhostname))
 
@@ -238,6 +239,9 @@ class Mirror(object):
                 if __debug__:
                     traceback.print_exc()
                 self.log.error(traceback.format_exc())
+            finally:
+                self.log.info('订阅 {} 结束 '.format(self.tickerchannel))
+
 
     async def handlerSubTicker(self):
         """
@@ -488,44 +492,44 @@ class Mirror(object):
         self.start()
 
     async def pushTicker2Makeup(self, tickers, pushTickerIndex):
-        # tickers = tickers[:1000]
-        total = len(tickers)
-        num = 0
-
-        now = datetime.datetime.now()
-        waitTime = now - self.startBroadcastTime()
-
-        self.log.info('开始广播……')
-
-        if __debug__:
-            b = self._makeupBeginTime + datetime.timedelta(seconds=60)
-            while datetime.datetime.now() < b:
-                await sleep(1)
-        else:
-            # 等待 n 秒之后开始广播
-            await sleep(waitTime.total_seconds())
-
-        # 开始广播数据并进行对齐
-        for t in tickers:
-            pushTickerIndex(t)
-            num += 1
-            if __debug__:
-                if not num % 10000:
-                    self.log.debug(str(self.counts))
-            await sleep(0)
-
-        self.log.info('广播结束 {} / {}'.format(num, total))
-        await sleep(1)
-        self.log.info(str(self.counts))
-
-        if __debug__:
-            endTime = datetime.datetime.now() + datetime.timedelta(seconds=60 * 60)
-        else:
-            # 关闭服务的时间
-            endTime = self.endMakeupTime()
-
-        self.log.info(str(self.counts))
         try:
+            # tickers = tickers[:1000]
+            total = len(tickers)
+            num = 0
+
+            now = datetime.datetime.now()
+            waitTime = now - self.startBroadcastTime()
+
+            self.log.info('开始广播……')
+
+            if __debug__:
+                b = self._makeupBeginTime + datetime.timedelta(seconds=5)
+                while datetime.datetime.now() < b:
+                    await sleep(1)
+            else:
+                # 等待 n 秒之后开始广播
+                await sleep(waitTime.total_seconds())
+
+            # 开始广播数据并进行对齐
+            for t in tickers:
+                pushTickerIndex(t)
+                num += 1
+                if __debug__:
+                    if not num % 10000:
+                        self.log.debug(str(self.counts))
+                await sleep(0)
+
+            self.log.info('广播结束 {} / {}'.format(num, total))
+            await sleep(1)
+            self.log.info(str(self.counts))
+
+            if __debug__:
+                endTime = datetime.datetime.now() + datetime.timedelta(seconds=60 * 60)
+            else:
+                # 关闭服务的时间
+                endTime = self.endMakeupTime()
+
+            self.log.info(str(self.counts))
             while datetime.datetime.now() < endTime:
                 await sleep(10)
                 if __debug__:
