@@ -77,9 +77,9 @@ class Mirror(object):
         # 本地主机名，同时也是在Server-Redis上的标志，不能存在相同的主机名，尤其在使用Docker部署时注意重名
         self.localhostname = self.conf['localhostname'] or socket.gethostname()
 
-        # if __debug__:
-        #     # 随机构建不重名的主机名
-        #     self.localhostname = str(time.time())[-3:]
+        if __debug__:
+            # 随机构建不重名的主机名
+            self.localhostname = str(time.time())[-3:]
 
         self.log.info('localhostname {}'.format(self.localhostname))
 
@@ -503,7 +503,7 @@ class Mirror(object):
             self.log.info('开始广播……')
 
             if __debug__:
-                b = self._makeupBeginTime + datetime.timedelta(seconds=5)
+                b = self._makeupBeginTime + datetime.timedelta(seconds=60*2)
                 while datetime.datetime.now() < b:
                     await sleep(1)
             else:
