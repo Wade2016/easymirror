@@ -60,7 +60,7 @@ class Easycanine(Canine):
                         if random.randint(0, 1000) == 1:
                             continue
                         num += 1
-                        if num % 1000 == 0:
+                        if num % 10000 == 0:
                             self.log.debug('已经加载 %s 条数据' % num)
 
                     # 生成缓存
@@ -127,16 +127,10 @@ class Easycanine(Canine):
 
         :return:
         """
-        self.log.debug('12121')
-        print(symbol, dt)
         db = self.pymongo[self.dbn]
         query = {self.timename: dt}
 
-        print(131313, query)
         tick = db[symbol].find_one(query)
-
-        print(141414)
-        print(tick)
 
         with contextlib.suppress(KeyError):
             tick.pop('_id')

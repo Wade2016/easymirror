@@ -20,14 +20,16 @@ class Canine(object):
     # 设定时间戳集合过期时间
     TIMESTAMP_SET_EXPIRE = 60 * 60 * 10
     if __debug__:
-        TIMESTAMP_SET_EXPIRE = 60 * 5
+        TIMESTAMP_SET_EXPIRE = 60 * 60
 
-    PRE_DAYS = 2  # 对齐 2 天内的 tick 数据
+    PRE_DAYS = 1  # 对齐 2 天内的 tick 数据
 
     # 对齐时的获取数据超时
     MAKEUP_TIMEOUT = 60  # seconds
     if __debug__:
         MAKEUP_TIMEOUT = 10  # seconds
+
+    BUFF_SIZE = 100000
 
     def __init__(self, conf):
         with open(conf, 'r') as f:
@@ -53,7 +55,6 @@ class Canine(object):
             password=self.redisConf['password'],
             decode_responses=True,
         )
-        self.redis = None
         self.redis = self.getRedis()
 
         # 时间戳集合 timestamp:vnpy:myhostname
@@ -238,32 +239,28 @@ class Canine(object):
         if __debug__:
             preScard = self.redis.scard(channel)
 
-        # TODO 测试代码
-        if self.diffhost:
-            print(1414141)
-            test_c = self.rk_timestamp_name + ':' + self.diffhost
-            print(test_c, self.rk_timestamp_name_localhostname)
-            d = self.redis.sdiff(test_c, self.rk_timestamp_name_localhostname)
-            print(list(d))
-            print(cache)
-
-            print(161616)
-            d = self.redis.sdiff(self._other, self._localchannel)
-            print(list(d))
-            print(cache)
+        self.log.info('上传时间戳到 {} 共 {}'.format(channel, len(cache)))
 
         p = self.redis.pipeline()
 
-        self.log.info('上传时间戳到 {} 共 {}'.format(channel, len(cache)))
-        p.sadd(channel, *cache)
         # 管道堆入
-        r = p.execute()
+        buff_size = self.BUFF_SIZE
+        size = len(cache)
+
+        def buffg(cache):
+            b, e = 0, 0
+            while e < size:
+                b, e = e, e + buff_size
+                yield cache[b:e]
+
+        for buff in buffg(cache):
+            p.sadd(channel, buff)
+
+        p.execute()
 
         if __debug__:
             afterScard = self.redis.scard(channel)
-            print(r)
             self.log.debug('上传前后数量 {} {}'.format(preScard, afterScard))
-
 
     def _2timestamp(self, tick):
         """
@@ -338,7 +335,7 @@ class Canine(object):
             # 差集
             self.log.info('对比 {} - {}'.format(other, localchannel))
             if __debug__:
-                self._other =  other
+                self._other = other
                 self._localchannel = localchannel
             diff = self.redis.sdiff(other, localchannel)
 
@@ -354,7 +351,7 @@ class Canine(object):
         格式化为请求队列
         :return: ts:localhostname
         """
-        return ts + ':' + self.localhostname
+        return ts + ',' + self.localhostname
 
     def _4askmsg(self, msg):
         """
@@ -364,8 +361,8 @@ class Canine(object):
         :param msg:
         :return: item, datetime, localhostname
         """
-        s, t, n = msg.split(':')
-        s, dt = self._4timestampe(msg.strip(':' + n))
+        s, t, n = msg.split(',')
+        s, dt = self._4timestampe(msg.strip(',' + n))
         return s, dt, n
 
     def ask(self):
@@ -379,7 +376,7 @@ class Canine(object):
         p = self.redis.pipeline()
 
         # 生成请求信息
-        asgmsgs = list(self.diffence)
+        asgmsgs = [self._2askmsg(ts) for ts in self.diffence]
 
         # 推送进去
         if __debug__:
@@ -425,8 +422,8 @@ class Canine(object):
 
         :return:
         """
-        return self.redis or redis.StrictRedis(**self.redisConf, connection_pool=self.redisConnectionPool, decode_responses=True)
-        # return redis.StrictRedis(**self.redisConf, connection_pool=self.redisConnectionPool, decode_responses=True)
+        # return self.redis or redis.StrictRedis(**self.redisConf, connection_pool=self.redisConnectionPool, decode_responses=True)
+        return redis.StrictRedis(**self.redisConf, connection_pool=self.redisConnectionPool, decode_responses=True)
 
     def popAsk(self):
         """
@@ -435,11 +432,11 @@ class Canine(object):
 
         :return:
         """
-        redis = self.getRedis()
+        r = self.getRedis()
         channel = self.rk_ask_name_localhost
         while self.__active:
             # 阻塞方式获取
-            msg = redis.blpop(channel)
+            c, msg = r.blpop(channel)
             # 将其放到待处理队列，阻塞
             self.askQueue.put(msg)
 
@@ -453,29 +450,33 @@ class Canine(object):
         r = self.getRedis()
         while self.__active:
             # 获取对齐请求，阻塞
-            fromChannel, msgs = self.askQueue.get()
-            msgs = json.loads(msgs)
-            hostname = fromChannel.split(':')[-1]
+            msgs = self.askQueue.get()
 
+            msgs = json.loads(msgs)
+
+            self.log.info('开始查询对齐数据 0/{} '.format(len(msgs)))
+            msgNum = 0
             for msg in msgs:
-                item, dt = self._4timestampe(msg)
+                item, dt, host = self._4askmsg(msg)
 
                 assert isinstance(dt, datetime.datetime)
 
                 tick = self.queryTick2makeup(item, dt)
                 try:
-                    msg = self._2makeuptick(tick)
+                    tick = self._2makeuptick(tick)
                 except:
                     if __debug__:
                         self.log.debug(str(msg))
                         traceback.print_exc()
                     continue
-
+                msgNum += 1
                 # 对方的接受频道
-                channel = self.rk_makeuptick + ':' + hostname
-                while not r.lpush(channel, msg):
+                makeupChannel = self.rk_makeuptick + ':' + host
+                while not r.lpush(makeupChannel, tick):
                     self.log.info('发送对齐tick失败，重发...')
                     time.sleep(0.1)
+
+            self.log.info('返回对齐数据 {}'.format(msgNum))
 
     def _2makeuptick(self, tick):
         """
@@ -609,7 +610,7 @@ class Canine(object):
         now = datetime.datetime.now()
         if __debug__:
             seconds = 5
-            # seconds = 60
+            # seconds = 60 * 3
             rest = (self._riseTime + datetime.timedelta(seconds=seconds)) - now
         else:
             # 等到开始

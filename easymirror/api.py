@@ -74,6 +74,7 @@ def makeup(_service, conf=None):
     m = importlib.import_module('easymirror._{}'.format(_service))
     em = m.Easycanine(conf)
     em.run()
+    return em
 
 
 # def _makeup(service, conf, queue):
