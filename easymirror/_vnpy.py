@@ -1,11 +1,15 @@
 import sys
 import datetime
 import pymongo
+from pymongo.errors import DuplicateKeyError
 from .canine import Canine
 import json
 import traceback
 import contextlib
-
+try:
+    import cPickle as pickle
+except ImportError:
+    import pickle
 
 class Easycanine(Canine):
     NAME = 'vnpy'
@@ -46,7 +50,7 @@ class Easycanine(Canine):
         self.log.info('对齐以下合约: {}'.format(','.join(collectionNames)))
 
         self.collectionNames = collectionNames
-        colsNum = len(collectionNames)
+
         num = 0
         db = self.pymongo[self.dbn]
         for n, colName in enumerate(collectionNames):
@@ -57,11 +61,9 @@ class Easycanine(Canine):
                 for t in cursor.distinct(self.timename):
                     if __debug__:
                         import random
-                        if random.randint(0, 1000) == 1:
+                        if random.randint(0, 100) == 1:
                             continue
                         num += 1
-                        if num % 10000 == 0:
-                            self.log.debug('已经加载 %s 条数据' % num)
 
                     # 生成缓存
                     ts = self._2timestamp({self.itemname: colName, self.timename: t})
@@ -102,10 +104,10 @@ class Easycanine(Canine):
         :param tick:
         :return:
         """
-        assert isinstance(tick[self.timename], datetime.datetime)
-        tick[self.timename] = tick[self.timename].timestamp()
+        # assert isinstance(tick[self.timename], datetime.datetime)
+        # tick[self.timename] = tick[self.timename].timestamp()
 
-        return json.dumps(tick)
+        return pickle.dumps(tick)
 
     def _4makeuptick(self, msg):
         """
@@ -115,10 +117,10 @@ class Easycanine(Canine):
         :param msg:
         :return:
         """
-        tick = json.loads(msg)
-
-        tick[self.timename] = datetime.datetime.fromtimestamp(tick[self.timename])
-        return tick
+        # tick = json.loads(msg)
+        #
+        # tick[self.timename] = datetime.datetime.fromtimestamp(tick[self.timename])
+        return pickle.loads(msg)
 
     def queryTick2makeup(self, symbol, dt):
         """
@@ -132,7 +134,12 @@ class Easycanine(Canine):
 
         tick = db[symbol].find_one(query)
 
-        with contextlib.suppress(KeyError):
+        if __debug__:
+            if tick is None:
+                print(181818)
+                print(symbol, query, tick)
+
+        with contextlib.suppress(KeyError, AttributeError):
             tick.pop('_id')
 
         return tick
@@ -150,7 +157,9 @@ class Easycanine(Canine):
         # 更新插入，有重复的时间戳不再重复插入数据
         try:
             return collection.insert_one(tick)
-        except:
+        except DuplicateKeyError:
+            return True
+        except :
             self.log.error(traceback.format_exc())
             return False
 

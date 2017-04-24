@@ -31,6 +31,8 @@ class Canine(object):
 
     BUFF_SIZE = 100000
 
+    SAVE_TIMEOUT_UNIT = 0.0001  # 每个 tick 允许超时的瞬间
+
     def __init__(self, conf):
         with open(conf, 'r') as f:
             conf = json.load(f)
@@ -82,6 +84,7 @@ class Canine(object):
 
         # 接受tick数据
         self.rk_makeuptick = 'makeup:{}'.format(self.name)
+        self.makeupQueue = Queue()  # 返回需要对齐的 tick
 
         # 子线程逻辑
         self.threads = [
@@ -181,24 +184,21 @@ class Canine(object):
         self.log.info('等待开始对比')
         self.waiStartDiffent()
 
+        self.log.info('对比差异')
+        self.doDiff()
+
         start = True
         while start or self.diffence:
             start = False
+            self.log.info('========')
             # # 对比其他节点的时间戳，获得差异
-            self.log.info('对比差异')
-            self.diff()
 
-            self.log.info('请求对齐')
-            # 请求对齐
-            self.ask()
-
-            # 收集对齐数据
-            self.log.info('接受对齐数据')
+            # # 进行对齐
+            self.log.info('进行对齐')
             self.makeup()
 
-            # 等待数据上传
-            time.sleep(20)
-            self.log.info('========')
+            self.log.info('重新对比')
+            self.doDiff()
 
         self.log.info('收尾')
         # 收尾工作
@@ -243,6 +243,10 @@ class Canine(object):
 
         p = self.redis.pipeline()
 
+        if len(cache) < 10:
+            for ts in cache:
+                print(self.redis.sismember(channel, ts))
+
         # 管道堆入
         buff_size = self.BUFF_SIZE
         size = len(cache)
@@ -254,17 +258,19 @@ class Canine(object):
                 yield cache[b:e]
 
         for buff in buffg(cache):
-            p.sadd(channel, buff)
+            p.sadd(channel, *buff)
 
         p.execute()
 
         if __debug__:
+            time.sleep(1)
             afterScard = self.redis.scard(channel)
             self.log.debug('上传前后数量 {} {}'.format(preScard, afterScard))
 
     def _2timestamp(self, tick):
         """
         生成唯一的时间戳
+        tick 是完整的 Tick数据 dict类型，或者致至少包含以下两个关键的 keys
 
         :param tick: {self.itamename: 'rb1710', self.timename: datetime.datetime() }
         :param t:
@@ -272,7 +278,10 @@ class Canine(object):
         """
         dt = tick[self.timename]
         assert isinstance(dt, datetime.datetime)
-        return '{},{}'.format(tick[self.itemname], dt.strftime(self.DATETIME_FORMATE))
+        # 可读的时间戳
+        # return '{},{}'.format(tick[self.itemname], dt.strftime(self.DATETIME_FORMATE))
+        # 浮点时间戳
+        return '{},{}'.format(tick[self.itemname], dt.timestamp())
 
     DATETIME_FORMATE = "%Y-%m-%d %H:%M:%S.%f"
 
@@ -282,8 +291,15 @@ class Canine(object):
         :param ts:
         :return:
         """
+        print(161616, ts)
         item, t = ts.split(',')
-        return item, datetime.datetime.strptime(t, self.DATETIME_FORMATE)
+
+        # 可读的时间戳
+        # return item, datetime.datetime.strptime(t, self.DATETIME_FORMATE)
+        # 浮点时间戳
+        print(17171717, item, t)
+        print(datetime.datetime.fromtimestamp(float(t)))
+        return item, datetime.datetime.fromtimestamp(float(t))
 
     # 盘后对齐结束时间
     AFTER_MAKEUP_END_TIME = [
@@ -309,7 +325,7 @@ class Canine(object):
             t = self.AFTER_MAKEUP_END_TIME[0]
             return datetime.datetime.combine(tomorrow, t)
 
-    def diff(self):
+    def doDiff(self):
         """
 
         对比与其他节点时间戳的差异
@@ -345,6 +361,8 @@ class Canine(object):
                 self.diffhost = hostname
                 self.log.debug('差异主机 {} 数量 {}'.format(hostname, len(diff)))
                 break
+        else:
+            self.log.info('对比所有主机无差异')
 
     def _2askmsg(self, ts):
         """
@@ -362,40 +380,39 @@ class Canine(object):
         :return: item, datetime, localhostname
         """
         s, t, n = msg.split(',')
-        s, dt = self._4timestampe(msg.strip(',' + n))
-        return s, dt, n
+        return s, datetime.datetime.fromtimestamp(float(t)), n
 
-    def ask(self):
-        """
-        请求对齐，逐个主机进行请求对齐
-        :return:
-        """
-
-        # 对方的请求队列
-        channel = self.rk_ask_name + ":{}".format(self.diffhost)
-        p = self.redis.pipeline()
-
-        # 生成请求信息
-        asgmsgs = [self._2askmsg(ts) for ts in self.diffence]
-
-        # 推送进去
-        if __debug__:
-            self.log.debug('对齐请求')
-        self.log.info('请求channel: {}'.format(channel))
-
-        # 阻塞 将数据放入队列，等待响应
-        result = p.lpush(channel, json.dumps(asgmsgs)).execute()
-
-        tmp = []
-        while 0 in set(result):
-            self.log.info('重新发送请求信息')
-            for i, r in result:
-                if r == 0:
-                    msg = asgmsgs[i]
-                    tmp.append(msg)
-
-            result = p.lpush(channel, tmp)
-            asgmsgs = tmp
+    # def ask(self):
+    #     """
+    #     请求对齐，逐个主机进行请求对齐
+    #     :return:
+    #     """
+    #
+    #     # 对方的请求队列
+    #     channel = self.rk_ask_name + ":{}".format(self.diffhost)
+    #     p = self.redis.pipeline()
+    #
+    #     # 生成请求信息
+    #     asgmsgs = [self._2askmsg(ts) for ts in self.diffence]
+    #
+    #     # 推送进去
+    #     if __debug__:
+    #         self.log.debug('对齐请求')
+    #     self.log.info('请求channel: {}'.format(channel))
+    #
+    #     # 阻塞 将数据放入队列，等待响应
+    #     result = p.lpush(channel, json.dumps(asgmsgs)).execute()
+    #
+    #     tmp = []
+    #     while 0 in set(result):
+    #         self.log.info('重新发送请求信息')
+    #         for i, r in result:
+    #             if r == 0:
+    #                 msg = asgmsgs[i]
+    #                 tmp.append(msg)
+    #
+    #         result = p.lpush(channel, tmp)
+    #         asgmsgs = tmp
 
     def start(self):
         """
@@ -434,6 +451,7 @@ class Canine(object):
         """
         r = self.getRedis()
         channel = self.rk_ask_name_localhost
+        self.log.info('开始监听请求频道 {}'.format(channel))
         while self.__active:
             # 阻塞方式获取
             c, msg = r.blpop(channel)
@@ -450,33 +468,27 @@ class Canine(object):
         r = self.getRedis()
         while self.__active:
             # 获取对齐请求，阻塞
-            msgs = self.askQueue.get()
+            askmsg = self.askQueue.get()
+            item, dt, host = self._4askmsg(askmsg)
+            tick = self.queryTick2makeup(item, dt)
 
-            msgs = json.loads(msgs)
+            if tick is None:
+                print(191919, askmsg)
+                print(self._4askmsg(askmsg))
+                print('===========')
+                continue
 
-            self.log.info('开始查询对齐数据 0/{} '.format(len(msgs)))
-            msgNum = 0
-            for msg in msgs:
-                item, dt, host = self._4askmsg(msg)
+            try:
+                tick = self._2makeuptick(tick)
+            except:
+                self.log.error(traceback.format_exc())
+                continue
 
-                assert isinstance(dt, datetime.datetime)
-
-                tick = self.queryTick2makeup(item, dt)
-                try:
-                    tick = self._2makeuptick(tick)
-                except:
-                    if __debug__:
-                        self.log.debug(str(msg))
-                        traceback.print_exc()
-                    continue
-                msgNum += 1
-                # 对方的接受频道
-                makeupChannel = self.rk_makeuptick + ':' + host
-                while not r.lpush(makeupChannel, tick):
-                    self.log.info('发送对齐tick失败，重发...')
-                    time.sleep(0.1)
-
-            self.log.info('返回对齐数据 {}'.format(msgNum))
+            # 对方的接受频道
+            makeupChannel = self.rk_makeuptick + ':' + host
+            while not r.lpush(makeupChannel, tick):
+                self.log.info('发送对齐tick失败，重发...')
+                time.sleep(0.1)
 
     def _2makeuptick(self, tick):
         """
@@ -513,49 +525,52 @@ class Canine(object):
         :return:
         """
         r = self.redis
-        channel = self.rk_makeuptick + ':' + self.localhostname
-        lackNum = len(self.diffence)
-        makeupNum = 0
+        askChannel = self.rk_ask_name + ':' + self.localhostname
+        makeupChannel = self.rk_makeuptick + ':' + self.localhostname
+        size = len(self.diffence)
 
-        newTicks = set()
-        if lackNum == 0:
-            self.log.warning('没有需要对齐的数据')
-            return
+        # 使用线程接受 tick 并存库
+        _saveTick = Thread(target=self._saveTick, args=(size,))
+        _saveTick.start()
 
-        while makeupNum < lackNum:
-            try:
-                channel, tick = r.blpop(channel, self.MAKEUP_TIMEOUT)
-            except TypeError:
-                # 超时
-                self.log.info('等待对齐时间结束 共计 {}'.format(makeupNum))
+        for ts in self.diffence:
+            while True:
+                askmsg = self._2askmsg(ts)
+                # 发送请求
+                self.redis.lpush(askChannel, askmsg)
+                try:
+                    # 接受对齐数据
+                    c, msg = r.blpop(makeupChannel, self.MAKEUP_TIMEOUT)
+                    tick = self._4makeuptick(msg)
+                    self.makeupQueue.put(tick)
+                except TypeError:
+                    self.log.debug(askmsg)
+                    self.log.info('超时, 重新发送')
+                    continue
                 break
-            tick = self._4makeuptick(tick)
 
-            makeupNum += 1
-            # 保存该条tick
+        saveTimeout = max(self.SAVE_TIMEOUT_UNIT * size, 10)
+        self.log.info('等待存库完成 ')
+        _saveTick.join(timeout=saveTimeout)
+
+    def _saveTick(self, size):
+        """
+
+        :param size: 这一批要对齐的 tick 数量
+        :return:
+        """
+        timestampes = []
+        for i in range(size):
+            tick = self.makeupQueue.get()
+            self.saveTick(tick)
             ts = self._2timestamp(tick)
-            if __debug__:
-                if ts not in self.diffence:
-                    print(181818)
-                    print(ts)
-                    print(self.diffence)
-            if self.saveTick(tick):
-                # 填入缓存
-                self.cache.add(ts)
-                newTicks.add(ts)
-            else:
-                self.log.debug('保存失败 {}'.format(ts))
+            timestampes.append(ts)
 
-            if __debug__:
-                if makeupNum % 100 == 0:
-                    self.log.debug('保存了 {} tick'.format(len(newTicks)))
-        else:
-            self.log.info('共对齐 {}'.format(makeupNum))
+        self.cache |= set(timestampes)
 
-        # 补上新增的时间戳
-
-        if newTicks:
-            self._broadcastTimestampe(list(newTicks))
+        # 对齐Tick 后,补上时间戳
+        self.log.info('补充对齐后的时间戳')
+        self._broadcastTimestampe(list(timestampes))
 
     def saveTick(self, tick):
         """
@@ -584,7 +599,7 @@ class Canine(object):
 
     def startDiffentTime(self):
         """
-        开始广播的时间
+        开始对比的时间
         :return:
         """
         now = datetime.datetime.now()
@@ -609,8 +624,8 @@ class Canine(object):
 
         now = datetime.datetime.now()
         if __debug__:
-            seconds = 5
-            # seconds = 60 * 3
+            # seconds = 5
+            seconds = 60 * 3
             rest = (self._riseTime + datetime.timedelta(seconds=seconds)) - now
         else:
             # 等到开始
@@ -618,6 +633,6 @@ class Canine(object):
 
         seconds = max(rest.total_seconds(), 0)
         if __debug__:
-            self.log.debug('{} 秒后开始广播'.format(seconds))
+            self.log.debug('{} 秒后开始对比'.format(seconds))
 
         time.sleep(seconds)
