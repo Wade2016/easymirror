@@ -14,8 +14,8 @@
     "log": "./log/vnpy.log"
     ,"channel": "vnpy"
     ,"localhostname": null
-    ,"host": "localhost"
-    ,"port": 27017
+    ,"mongohost": "localhost"
+    ,"mongoport": 27017
     ,"TickerDB": "VnTrader_Tick_Db"
   }
 }

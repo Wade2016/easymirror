@@ -135,7 +135,6 @@ class Easymirror(Mirror):
         # await self.db[ticker[self.itemname]].update_one(query, {'$set': ticker}, upsert=True)
         self.counts['存库'] += 1
 
-
     def loadToday(self):
         """
         加载今天交易日的ticker数据并生成缓存
@@ -173,7 +172,7 @@ class Easymirror(Mirror):
         db = self.pymongoCLient[self.dbn]
         for n, colName in enumerate(collectionNames):
             if __debug__:
-                self.log.debug('加载合约 {} {}/{}'.format(colName, n+1, colsNum))
+                self.log.debug('加载合约 {} {}/{}'.format(colName, n + 1, colsNum))
             with db[colName].find({'date': {'$gte': preDate}}) as cursor:
                 for t in cursor.distinct(self.timename):
 
