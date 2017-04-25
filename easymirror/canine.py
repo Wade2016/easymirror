@@ -8,6 +8,7 @@ import socket
 from threading import Thread
 from queue import Queue
 import traceback
+import random
 
 
 class BroadcastException(BaseException):
@@ -84,6 +85,7 @@ class Canine(object):
 
         # 接受tick数据
         self.rk_makeuptick = 'makeup:{}'.format(self.name)
+        self.rk_makeuptick_localname = self.rk_makeuptick + ':' + self.localhostname
         self.makeupQueue = Queue()  # 返回需要对齐的 tick
 
         # 子线程逻辑
@@ -91,6 +93,10 @@ class Canine(object):
             self.popAskThread,
             self.queryAskThread,
         ]
+
+        # 服务关闭时间
+        self.closeTime = self.endMakeupTime()
+        self.log.info('对齐 {} 关闭时间: {}'.format(self.name, self.closeTime))
 
     def _initLog(self):
         """
@@ -161,6 +167,12 @@ class Canine(object):
 
             # 开启主线逻辑
             self._run()
+
+            # 等待服务结束
+            restTime = self.closeTime - datetime.datetime.now()
+            time.sleep(restTime.total_seconds())
+            self.stop()
+
         except:
             self.log.error(traceback.format_exc())
         finally:
@@ -168,13 +180,16 @@ class Canine(object):
 
     def _run(self):
 
+        # 检查 redis 情况
+        self.checkRedis()
+
         # 加载要对齐的时间戳
         self.log.info('加载要对齐的时间戳')
         self.loadToday()
 
-        if not self.cache:
-            self.log.warning('没有数据需要对齐')
-            return
+        # if not self.cache:
+        #     self.log.warning('没有数据需要对齐')
+        #     return
 
         # 上传到 redis 服务器上
         self.log.info('上传数据')
@@ -187,9 +202,7 @@ class Canine(object):
         self.log.info('对比差异')
         self.doDiff()
 
-        start = True
-        while start or self.diffence:
-            start = False
+        while self.diffence:
             self.log.info('========')
             # # 对比其他节点的时间戳，获得差异
 
@@ -203,6 +216,8 @@ class Canine(object):
         self.log.info('收尾')
         # 收尾工作
         self.afterRun()
+
+        time.sleep(60 * 10)
 
     def loadToday(self):
         """
@@ -345,8 +360,8 @@ class Canine(object):
         except ValueError:
             pass
 
-        # 检查遗漏
-        for other in timestampeChannels:
+        # 检查遗漏，随机排序分摊压力
+        for other in random.sample(timestampeChannels, len(timestampeChannels)):
             hostname = other.split(':')[-1]
             # 差集
             self.log.info('对比 {} - {}'.format(other, localchannel))
@@ -525,9 +540,15 @@ class Canine(object):
         :return:
         """
         r = self.redis
-        askChannel = self.rk_ask_name + ':' + self.localhostname
-        makeupChannel = self.rk_makeuptick + ':' + self.localhostname
+
+        assert self.diffhost is not None
+
+        askChannel = self.rk_ask_name + ':' + self.diffhost
+        makeupChannel = self.rk_makeuptick_localname
         size = len(self.diffence)
+
+        self.log.info('请求频道: {}'.format(askChannel))
+        self.log.info('本地对齐: {}'.format(makeupChannel))
 
         # 使用线程接受 tick 并存库
         _saveTick = Thread(target=self._saveTick, args=(size,))
@@ -546,6 +567,8 @@ class Canine(object):
                 except TypeError:
                     self.log.debug(askmsg)
                     self.log.info('超时, 重新发送')
+                    if __debug__:
+                        traceback.print_exc()
                     continue
                 break
 
@@ -560,11 +583,18 @@ class Canine(object):
         :return:
         """
         timestampes = []
+
+        num = 0
+
         for i in range(size):
             tick = self.makeupQueue.get()
             self.saveTick(tick)
             ts = self._2timestamp(tick)
             timestampes.append(ts)
+            if __debug__:
+                num += 1
+                if num % 10 == 0:
+                    self.log.debug('导入 {}/{}'.format(num, size))
 
         self.cache |= set(timestampes)
 
@@ -625,7 +655,7 @@ class Canine(object):
         now = datetime.datetime.now()
         if __debug__:
             # seconds = 5
-            seconds = 60 * 3
+            seconds = 60
             rest = (self._riseTime + datetime.timedelta(seconds=seconds)) - now
         else:
             # 等到开始
@@ -636,3 +666,13 @@ class Canine(object):
             self.log.debug('{} 秒后开始对比'.format(seconds))
 
         time.sleep(seconds)
+
+    def checkRedis(self):
+        """
+        清除所有 redis 的数据
+        :return:
+        """
+        # 自动清除过期的 key
+        self.redis.keys()
+        if __debug__:
+            self.redis.flushdb()

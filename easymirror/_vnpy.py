@@ -51,6 +51,7 @@ class Easycanine(Canine):
 
         self.collectionNames = collectionNames
 
+        self.log.info('开始加载数据...')
         num = 0
         db = self.pymongo[self.dbn]
         for n, colName in enumerate(collectionNames):
@@ -59,11 +60,11 @@ class Easycanine(Canine):
 
             with db[colName].find({'date': {'$gte': preDate}}) as cursor:
                 for t in cursor.distinct(self.timename):
-                    if __debug__:
-                        import random
-                        if random.randint(0, 100) == 1:
-                            continue
-                        num += 1
+                    # if __debug__:
+                    #     import random
+                    #     if random.randint(0, 100) == 1:
+                    #         continue
+                    #     num += 1
 
                     # 生成缓存
                     ts = self._2timestamp({self.itemname: colName, self.timename: t})
