@@ -3,7 +3,6 @@ import datetime
 import pymongo
 from pymongo.errors import DuplicateKeyError
 from .canine import Canine
-import json
 import traceback
 import contextlib
 try:
