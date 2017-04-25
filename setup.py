@@ -11,8 +11,8 @@ __version__ = "0.0.4"
 
 setup(name='easymirror',
       version=__version__,
-      keywords='Finance',
-      description='Rsync fianace datasource.',
+      keywords='Finance easy futures makeup',
+      description='Rsync financial datasource.',
       long_description=read("README.md"),
       license='GPL',
 
@@ -23,11 +23,9 @@ setup(name='easymirror',
       packages=find_packages(),
       include_package_data=True,
       install_requires=read("requirements.txt").splitlines(),
-      classifiers=['Development Status :: 4 - Beta',
-                   'Programming Language :: Python :: 2.7',
-                   'Programming Language :: Python :: 3.2',
-                   'Programming Language :: Python :: 3.3',
-                   'Programming Language :: Python :: 3.4',
-                   'Programming Language :: Python :: 3.5',
-                   'License :: OSI Approved :: GPL License'],
+      classifiers=[
+          'Programming Language :: Python :: 2.7',
+          'Programming Language :: Python :: 3.4',
+          'Programming Language :: Python :: 3.5',
+      ],
       )
