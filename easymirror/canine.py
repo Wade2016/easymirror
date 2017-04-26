@@ -195,8 +195,8 @@ class Canine(object):
         self.log.info('上传数据')
         self.broadcast()
 
-        # 加载完缓存数据，等待到开始广播的时间
-        self.log.info('等待开始对比')
+        # 加载完缓存数据，等待其他节点加载数据
+        self.log.info('开始对比时间 {}'.format(self.startDiffentTime()))
         self.waiStartDiffent()
 
         self.log.info('对比差异')
