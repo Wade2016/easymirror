@@ -5,11 +5,6 @@
     ,"port": 23002
     ,"password": "LoliIsJustice"
   },
-  "easyctp":{
-    "log": "./log/easyctp.log"
-    ,"channel": "easyctp"
-    ,"localhostname": null
-  },
   "vnpy":{
     "log": "./log/vnpy.log"
     ,"channel": "vnpy"

@@ -1,10 +1,8 @@
 # encoding: UTF-8
 import importlib
 from multiprocessing import Process, Queue
-import time
 import os
 from .dealutils import getConfPath
-from asyncio import sleep
 
 # 子进程通信队列
 queue = Queue()
@@ -89,3 +87,17 @@ def makeup(_service, conf=None):
 #     # 日常对齐
 #     em.dailyMakeup(pushTickerIndex)
 #
+
+def dumpconf(conf='all', savePath='.'):
+    """
+    导出配置文件
+    :return:
+    """
+    confPath = getConfPath()
+    if conf == 'all':
+        # 导出全部
+        os.popen('cp {confPath}/* {savePath}'.format(confPath=confPath, savePath=savePath))
+    else:
+        os.popen('cp {confPath}/{conf} {savePath}'.format(confPath=confPath, conf=conf, savePath=savePath))
+
+
