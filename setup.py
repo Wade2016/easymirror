@@ -3,7 +3,7 @@ import os
 
 
 def read(fname):
-    with open(os.path.join(os.path.dirname(__file__), fname)) as f:
+    with open(os.path.join(os.path.dirname(__file__), fname), 'r', encoding='utf8') as f:
         return f.read()
 
 
