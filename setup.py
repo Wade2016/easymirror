@@ -3,16 +3,16 @@ import os
 
 
 def read(fname):
-    with open(os.path.join(os.path.dirname(__file__), fname)) as f:
+    with open(os.path.join(os.path.dirname(__file__), fname), 'r', encoding='utf8') as f:
         return f.read()
 
 
-__version__ = "0.0.3"
+__version__ = "0.0.6"
 
 setup(name='easymirror',
       version=__version__,
-      keywords='Finance',
-      description='Rsync fianace datasource.',
+      keywords='Finance easy futures makeup',
+      description='Rsync financial datasource.',
       long_description=read("README.md"),
       license='GPL',
 
@@ -23,11 +23,9 @@ setup(name='easymirror',
       packages=find_packages(),
       include_package_data=True,
       install_requires=read("requirements.txt").splitlines(),
-      classifiers=['Development Status :: 4 - Beta',
-                   'Programming Language :: Python :: 2.7',
-                   'Programming Language :: Python :: 3.2',
-                   'Programming Language :: Python :: 3.3',
-                   'Programming Language :: Python :: 3.4',
-                   'Programming Language :: Python :: 3.5',
-                   'License :: OSI Approved :: GPL License'],
+      classifiers=[
+          'Programming Language :: Python :: 2.7',
+          'Programming Language :: Python :: 3.4',
+          'Programming Language :: Python :: 3.5',
+      ],
       )

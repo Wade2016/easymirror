@@ -3,4 +3,4 @@ if [ -f ../tmp/redis/23002.pid ]; then
     kill $(cat ../tmp/redis/23002.pid)
 fi;
 sleep 1
-redis-server ../conf/23002.conf
+redis-server ../conf/redis.conf

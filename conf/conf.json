@@ -1,20 +1,18 @@
 {
+  "path": "conf",
   "redis": {
     "host": "192.168.31.204"
     ,"port": 23002
     ,"password": "LoliIsJustice"
   },
-  "easyctp":{
-    "log": "./log/easyctp.log"
-    ,"channel": "easyctp"
-    ,"localhostname": null
-  },
   "vnpy":{
-    "log": "./log/vnpy.log"
+    "log": "./log/"
     ,"channel": "vnpy"
     ,"localhostname": null
-    ,"host": "localhost"
-    ,"port": 27017
+    ,"mongohost": "localhost"
+    ,"mongoport": 27017
     ,"TickerDB": "VnTrader_Tick_Db"
+    ,"PRE_DAY": 2
+    ,"serverChanUrl": null
   }
 }
