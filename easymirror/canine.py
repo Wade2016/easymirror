@@ -1,5 +1,7 @@
 import sys
+import os
 import logging
+import logging.handlers
 import json
 import datetime
 import redis
@@ -113,7 +115,18 @@ class Canine(object):
 
         logFormatter = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 
-        fh = logging.FileHandler(self.conf["log"])
+        logname = os.path.join(self.conf["log"], self.name)
+
+        # logname += str(datetime.date.today())
+        # fh = logging.FileHandler(logname, )
+
+        fh = logging.handlers.TimedRotatingFileHandler(
+            logname,
+            encoding='utf-8',
+            when='midnight', backupCount=30
+        )
+        fh.suffix = "%Y-%m-%d.log"
+
         fh.setLevel("INFO")
         fh.setFormatter(logFormatter)
         log.addHandler(fh)
@@ -179,7 +192,6 @@ class Canine(object):
             restTime = self.closeTime - datetime.datetime.now()
             time.sleep(restTime.total_seconds())
             self.stop()
-
         except:
             self.log.error(traceback.format_exc())
         finally:
