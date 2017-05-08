@@ -9,6 +9,7 @@ from threading import Thread
 from queue import Queue
 import traceback
 import random
+import signal
 
 
 class BroadcastException(BaseException):
@@ -34,15 +35,18 @@ class Canine(object):
 
     SAVE_TIMEOUT_UNIT = 0.0001  # 每个 tick 允许超时的瞬间
 
-    def __init__(self, conf):
-        with open(conf, 'r') as f:
+    def __init__(self, confPath):
+        with open(confPath, 'r') as f:
             conf = json.load(f)
+
         self.conf = conf[self.name]
         self.redisConf = conf['redis']
         self.dbn = self.conf['TickerDB']  # mongoDB 中 Tick 数据的数据库名
         self._riseTime = datetime.datetime.now()
 
         self.log = self._initLog()
+        self.PRE_DAYS = self.conf.get('PRE_DAYS', self.PRE_DAYS)
+        self.log.info('对齐 {} 天内的数据'.format(self.PRE_DAYS))
 
         # 本地主机名，同时也是在Server-Redis上的标志，不能存在相同的主机名，尤其在使用Docker部署时注意重名
         self.localhostname = self.conf['localhostname'] or socket.gethostname()
@@ -58,6 +62,7 @@ class Canine(object):
             password=self.redisConf['password'],
             decode_responses=True,
         )
+        self.log.info('redis主机: {host}:{port}'.format(**self.redisConf))
         self.redis = self.getRedis()
 
         # 时间戳集合 timestamp:vnpy:myhostname
@@ -113,16 +118,18 @@ class Canine(object):
         fh.setFormatter(logFormatter)
         log.addHandler(fh)
 
+        sh = logging.StreamHandler(sys.stdout)
+        sh.setFormatter(logFormatter)
+        sh.setLevel('INFO')
+        log.addHandler(sh)
+
         if __debug__:
-            # self.log.debug = print
             # 屏幕输出
-            sh = logging.StreamHandler(sys.stdout)
-            sh.setFormatter(logFormatter)
             sh.setLevel('DEBUG')
-            log.addHandler(sh)
 
             log.setLevel("DEBUG")
             log.debug("初始化日志完成")
+
         return log
 
     @property
@@ -635,6 +642,11 @@ class Canine(object):
         now = datetime.datetime.now()
         today = datetime.date.today()
 
+        if __debug__:
+            # seconds = 5
+            seconds = 60
+            return (self._riseTime + datetime.timedelta(seconds=seconds))
+
         for t in self.AFTER_MAKEUP_BROADCAST_TIME:
             if now.time() < t:
                 # 当天
@@ -653,13 +665,9 @@ class Canine(object):
         startTime = self.startDiffentTime()
 
         now = datetime.datetime.now()
-        if __debug__:
-            # seconds = 5
-            seconds = 60
-            rest = (self._riseTime + datetime.timedelta(seconds=seconds)) - now
-        else:
-            # 等到开始
-            rest = startTime - now
+
+        # 等到开始
+        rest = startTime - now
 
         seconds = max(rest.total_seconds(), 0)
         if __debug__:

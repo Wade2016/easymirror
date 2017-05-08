@@ -13,12 +13,19 @@ pip install -e .
 ```
 ### 配置文件
 主要的配置文件是`conf/conf.json`。
+导出配置文件
+```python
+import easymirror as em
+em.dumpconf() # 将相关配置文件导出到当前目录
+```
+
 
 ### Redis
 1. 这里`Redis`使用的端口是23002，对应的`Redis`配置文件是`redis.conf`。
 2. 基本上只需要简单地配置一下端口号和异地访问密码即可。
 3. 生产环境下，在公网部署部署该`Redis`服务。
 4. 各个节点的`conf.json`文件中指向该`Redis`主机的 __host__ 。
+
 
 ## 使用
 1. 实盘中对齐
