@@ -12,6 +12,7 @@ from queue import Queue
 import traceback
 import random
 import signal
+import requests
 
 
 class BroadcastException(BaseException):
@@ -325,14 +326,11 @@ class Canine(object):
         :param ts:
         :return:
         """
-        print(161616, ts)
         item, t = ts.split(',')
 
         # 可读的时间戳
         # return item, datetime.datetime.strptime(t, self.DATETIME_FORMATE)
         # 浮点时间戳
-        print(17171717, item, t)
-        print(datetime.datetime.fromtimestamp(float(t)))
         return item, datetime.datetime.fromtimestamp(float(t))
 
     # 盘后对齐结束时间
@@ -464,9 +462,26 @@ class Canine(object):
         :return:
         """
         self.__active = False
-        for t in self.threads:
-            if t.isAlive():
-                t.join()
+        try:
+            for t in self.threads:
+                if t.isAlive():
+                    t.join()
+        except KeyboardInterrupt:
+            self.log.warn('主动退出')
+        except:
+            self.log.error(traceback.format_exc())
+
+        try:
+            # 发送微信消息汇报
+            url = self.conf['serverChanUrl']
+            tittle = '{}@{} 盘后对齐结束'.format(self.name, self.localhostname)
+            params = {"text": tittle}
+            logname = os.path.join(self.conf['log'], self.name)
+            with open(logname, 'r') as f:
+                params["desp"] = f.read()
+            requests.get(url, params=params)
+        except:
+            self.log.error(traceback.format_exc())
 
     def getRedis(self):
         """

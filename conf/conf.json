@@ -6,11 +6,13 @@
     ,"password": "LoliIsJustice"
   },
   "vnpy":{
-    "log": "./log/vnpy.log"
+    "log": "./log/"
     ,"channel": "vnpy"
     ,"localhostname": null
     ,"mongohost": "localhost"
     ,"mongoport": 27017
     ,"TickerDB": "VnTrader_Tick_Db"
+    ,"PRE_DAY": 2
+    ,"serverChanUrl": null
   }
 }
